@@ -1,0 +1,25 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# visualization files
+*.png
+*.jpg
+*.vtk
+*.vtu
+*.pvd
+*.h5
+*.xdmf
+
+# misc
+*.txt
+jit*
+*.so
+*.o
+*.log
+*.out

@@ -1,0 +1,6 @@
+The situation seems to be that u(x) (and also h(x)) tend to form kinks at certain points in the domain, after which no matter how low i make the tolerance(tested to some range), the tolerance does not decrease. The code has a way to ensure that the tolerance at each step does not exceed the tolerance at the previous step. This is maaged by setting the skip parameter (skp) to 0. 
+I tried to reduce the tolerance and set skp to 1. While the tolerance fluctuated initially, there was a net overall decrease in the tolerance over time. However, after some iterations, the tolerance kept increasing agian. I have been tracking the energy and tolerance at each step in a file called output, and it seems like the enegy also increases when the tolerance is increasing. 
+
+In my opinion the hessian is not enough to stabilize the system.
+
+Show him the construction with the smooth transition regions. USe the fact that phi'' = (2m+1)(1-2t)^{2m}. Which for t \in [0,1] converges to 0 as m goes to infinity. Thus the hessian doesnt get much contribution.

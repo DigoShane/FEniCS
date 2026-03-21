@@ -1,0 +1,9 @@
+The files in this folder are 
+1. "test-#-Constraint4.py" --> These were obtained by running GinzburgLandau-1D-Constraint4.py manually.
+   I started with the solution for Lx=10, and slowly incremented the length of the domain. using the output of the previous case as input for the next.
+   The intial conditions were 0 for the extended part of the domain.
+   I kept going till i reached L=100, manually. It turns out that rlx_par=1, abs_tol=0.000001 and H_in=0.7071 could have been automated.
+   The energy density if 0.5051878211661333  
+ 
+2. The code "GinzburgLandau-1D-ConstraintLoopLength.py" take in the intial guess "test-#-ConstraintLoopLength.*" and it runs the code iteratively over the different lengths.
+   The output of the code, ie, the energy density has been stored in a file called "EnergyValues"

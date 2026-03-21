@@ -1,0 +1,11 @@
+This is instructions for Run-3.
+1. Copy this into the directory XDMF_Restart. 
+2. Uncomment the reading of initial condition from xdmf file part.
+3. Change the name of the file to be read in;you would have to change the number.
+4. The length of the domain should be Lx=200 and N=2000 discretization and kappa=1. 
+5. Run the code and input the following
+   H=0
+   rlx_par=0.1 (1 gives different/sharper result)
+   tol_abs=0.000001
+
+Once the figure is plotted, you can manipulate everything.

@@ -1,0 +1,18 @@
+This is instructions for Run-1.
+The code being used is GinzburgLandau-1D-Constraint2.py
+where the output of solve is replaced by u_+=\max\{u,0\} or |u|.
+We thus have to control the plot at each stage with small step size and tolerance change.
+Note that there are two files in this directory the one corresponding to u_+ titled up and the other corresponding to |u| titled ua.
+
+To run the code
+1. Copy this into the directory XDMF_Restart. 
+2. Uncomment the reading of initial condition from xdmf file part.
+3. Change the name of the file to be read in, would have to change the number.
+4. The length of the domain should be Lx=100 and kappa=1. 
+5. Run the code and input the following
+   H=0.707
+   rlx_par=0.0001 
+   tol_abs=0.00001
+
+
+

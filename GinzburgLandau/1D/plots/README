@@ -1,0 +1,3 @@
+To get the desired plots, we have saved the intiial conditions for each of them. Each file has instructions on what to do to reproduce the results.
+
+The directory Length Dom measures the length of the domain converges to the infinite case for H=1 and H=0. 
