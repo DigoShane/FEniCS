@@ -159,26 +159,16 @@ def sigma_degraded(v, phi):
 # Bilinear and linear forms for u (linear in du for fixed d)
 F_u = inner(sigma_degraded(u, d), eps(vu)) * dx
 
-dF_u = derivative(F, u, du)
+dF_u = derivative(F_u, u, du)
 
 # Nonlinear solver for displacement
 problem_u = NonlinearVariationalProblem(F_u, u, bcs=bcu, J=dF_u)
-solver_u = NonlinearVariationalSolver(problem_u)
+solver_u  = NonlinearVariationalSolver(problem_u)
 
-# Typical parameters (adjust as needed)
-prm = solver_u.parameters
-prm["newton_solver"]["absolute_tolerance"] = 1e-8
-prm["newton_solver"]["relative_tolerance"] = 1e-7
-prm["newton_solver"]["maximum_iterations"] = 25
-prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
-prm["newton_solver"]["preconditioner"]     = "ilu"     # if using iterative linear solver
-prm["newton_solver"]["report"]             = True
-
-dd  = TrialFunction(Vd)
+dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
  
 def build_damage_forms():
-    """Rebuild each stagger iteration because H changes."""
     a = ( (Gc/l0 + 2.0*H) * dd * q
         + Gc * l0 * dot(grad(dd), grad(q)) ) * dx
     L = 2.0 * H * q * dx
@@ -186,7 +176,7 @@ def build_damage_forms():
  
  
 def solve_displacement():
-    solve(F_u == 0, u, bcs=bcu,
+    solve(F_u == 0, u, bcs=bcu, J=dF_u,
           solver_parameters={"newton_solver":
                              {"linear_solver": "lu",
                               "absolute_tolerance": 1e-8,
@@ -202,13 +192,13 @@ def solve_damage():
  
 #Energy functionals
 def stored_energy():
-    """Elastic strain energy: integral[ g(d)*W+(u) + W-(u) ] dV"""
+    #\int g(d)*W+(u) + W-(u) dx"""
     return assemble(
         (degradation(d) * psi_plus(u) + psi_minus(u)) * dx
     )
  
 def dissipated_energy():
-    """Fracture surface energy: integral[ Gc/(2l0)*d^2 + Gc*l0/2*|grad d|^2 ] dV"""
+    #\int Gc/(2l0)*d^2 + Gc*l0/2*|grad d|^2 dx
     return assemble(
         (Gc/(2*l0) * d**2 + Gc*l0/2 * dot(grad(d), grad(d))) * dx
     )
