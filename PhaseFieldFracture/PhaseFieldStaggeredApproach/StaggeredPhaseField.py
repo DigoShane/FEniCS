@@ -186,8 +186,7 @@ def solve_displacement():
 def solve_damage():
     a_d, L_d = build_damage_forms()
     solve(a_d == L_d, d, solver_parameters={"linear_solver": "lu"})          # or "mumps"
-    d.vector()[:] = np.maximum(d.vector().get_local(),
-                           d_old.vector().get_local())
+    d.vector()[:] = np.maximum(d.vector().get_local(), d_old.vector().get_local())
     d.vector()[:] = np.clip(d.vector().get_local(), 0.0, 1.0)
  
 #Energy functionals
