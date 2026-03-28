@@ -165,6 +165,15 @@ dF_u = derivative(F_u, u, du)
 problem_u = NonlinearVariationalProblem(F_u, u, bcs=bcu, J=dF_u)
 solver_u  = NonlinearVariationalSolver(problem_u)
 
+# Typical parameters (adjust as needed)
+prm = solver_u.parameters
+prm["newton_solver"]["absolute_tolerance"] = 1e-8
+prm["newton_solver"]["relative_tolerance"] = 1e-7
+prm["newton_solver"]["maximum_iterations"] = 25
+prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
+#prm["newton_solver"]["preconditioner"]     = "ilu"     # if using iterative linear solver
+prm["newton_solver"]["report"]             = True
+
 dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
  
@@ -176,12 +185,7 @@ def build_damage_forms():
  
  
 def solve_displacement():
-    solve(F_u == 0, u, bcs=bcu, J=dF_u,
-          solver_parameters={"newton_solver":
-                             {"linear_solver": "lu",
-                              "absolute_tolerance": 1e-8,
-                              "relative_tolerance": 1e-7,
-                              "maximum_iterations": 25}})
+    solver_u.solve()
 
 def solve_damage():
     a_d, L_d = build_damage_forms()
