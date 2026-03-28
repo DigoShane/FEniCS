@@ -171,7 +171,6 @@ prm["newton_solver"]["absolute_tolerance"] = 1e-8
 prm["newton_solver"]["relative_tolerance"] = 1e-7
 prm["newton_solver"]["maximum_iterations"] = 25
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
-#prm["newton_solver"]["preconditioner"]     = "ilu"     # if using iterative linear solver
 prm["newton_solver"]["report"]             = True
 
 dd  = TrialFunction(Vd) 
@@ -190,21 +189,17 @@ def solve_displacement():
 def solve_damage():
     a_d, L_d = build_damage_forms()
     solve(a_d == L_d, d, solver_parameters={"linear_solver": "lu"})          # or "mumps"
-    d.vector()[:] = np.maximum(d.vector().get_local(), d_old.vector().get_local())
-    d.vector()[:] = np.clip(d.vector().get_local(), 0.0, 1.0)
+    d.vector()[:] = np.maximum(d.vector().get_local(), d_old.vector().get_local()) # pointwise maximum to enforce irreversibilitya
+    d.vector()[:] = np.clip(d.vector().get_local(), 0.0, 1.0) #restricts to [0,1].
  
 #Energy functionals
 def stored_energy():
-    #\int g(d)*W+(u) + W-(u) dx"""
-    return assemble(
-        (degradation(d) * psi_plus(u) + psi_minus(u)) * dx
-    )
+    #\int g(d)*W+(u) + W-(u) dx
+    return assemble( (degradation(d) * psi_plus(u) + psi_minus(u)) * dx )
  
 def dissipated_energy():
     #\int Gc/(2l0)*d^2 + Gc*l0/2*|grad d|^2 dx
-    return assemble(
-        (Gc/(2*l0) * d**2 + Gc*l0/2 * dot(grad(d), grad(d))) * dx
-    )
+    return assemble( (Gc/(2*l0) * d**2 + Gc*l0/2 * dot(grad(d), grad(d))) * dx )
  
 #ParaView Output
 xdmf_u = XDMFFile("phase_field_no_mfront_displacement.xdmf")
@@ -217,11 +212,7 @@ for f in [xdmf_u, xdmf_d]:
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((
-    np.linspace(0,   70e-3,  6),
-    np.linspace(70e-3, 200e-3, 30),   # go up to 0.2 mm
-    np.linspace(200e-3, 350e-3, 40)   # go up to 0.35 mm — likely enough
-))[1:]   # skip first zero if you want
+loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 125e-3, 26)[1:]))   # skip first zero if you want
 N_steps = loading.shape[0]
 results = np.zeros((N_steps, 3))   # [force, elastic energy, fracture energy]
  
@@ -251,7 +242,7 @@ for i, t in enumerate(loading):
     # ---- Post-processing ----
     n = FacetNormal(mesh)
     traction = dot(sigma_degraded(u, d), n)
-    reaction = assemble(dot(traction, as_vector((0,1))) * ds(1))
+    reaction = assemble(dot(traction, as_vector((0,1))) * ds(1)) # top bdry is 1 so ds(1) integrates only there.
     results[i, 0] = reaction
     results[i, 1] = stored_energy()
     results[i, 2] = dissipated_energy()
