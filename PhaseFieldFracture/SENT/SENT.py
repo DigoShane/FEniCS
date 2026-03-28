@@ -257,7 +257,7 @@ for i, t in enumerate(loading):
         res = np.max(d.vector().get_local() - d_old.vector().get_local())
         print("   Iteration {:3d}:  max(Δd) = {:.2e}".format(j, res))
         j += 1
- 
+
     # ---- Post-processing ----
     results[i, 0] = stored_energy()
     results[i, 1] = dissipated_energy()
