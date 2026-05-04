@@ -109,3 +109,60 @@ xdmf_file.write(m)
 
 xdmf_file.close()
 
+
+import matplotlib.pyplot as plt
+
+# ======================================
+# Create grid for plotting
+# ======================================
+n_plot = 100
+x_vals = np.linspace(0, 1, n_plot)
+y_vals = np.linspace(0, 1, n_plot)
+
+X, Y = np.meshgrid(x_vals, y_vals)
+
+# Storage
+m_x = np.zeros_like(X)
+m_y = np.zeros_like(Y)
+
+# ======================================
+# Evaluate m on grid
+# ======================================
+for i in range(n_plot):
+    for j in range(n_plot):
+        point = np.array([X[i, j], Y[i, j]])
+        val = m(point)
+        m_x[i, j] = val[0]
+        m_y[i, j] = val[1]
+
+# ======================================
+# Plot m_x
+# ======================================
+plt.figure()
+plt.contourf(X, Y, m_x, levels=50)
+plt.colorbar()
+plt.title("m_x")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.show()
+
+# ======================================
+# Plot m_y
+# ======================================
+plt.figure()
+plt.contourf(X, Y, m_y, levels=50)
+plt.colorbar()
+plt.title("m_y")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.show()
+
+# ======================================
+# Vector field (very useful)
+# ======================================
+plt.figure()
+plt.quiver(X, Y, m_x, m_y)
+plt.title("Magnetization field")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.show()
