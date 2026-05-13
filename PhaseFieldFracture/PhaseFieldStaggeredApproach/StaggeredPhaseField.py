@@ -204,7 +204,7 @@ def dissipated_energy():
 #ParaView Output
 xdmf_u = XDMFFile("phase_field_no_mfront_displacement.xdmf")
 xdmf_d = XDMFFile("phase_field_no_mfront_damage.xdmf")
- 
+
 for f in [xdmf_u, xdmf_d]:
     f.parameters["flush_output"]         = True
     f.parameters["functions_share_mesh"] = True
@@ -212,7 +212,7 @@ for f in [xdmf_u, xdmf_d]:
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 125e-3, 26)[1:]))   # skip first zero if you want
+loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 425e-3, 26)[1:]))   # skip first zero if you want
 N_steps = loading.shape[0]
 results = np.zeros((N_steps, 3))   # [force, elastic energy, fracture energy]
  
@@ -246,7 +246,7 @@ for i, t in enumerate(loading):
     results[i, 0] = reaction
     results[i, 1] = stored_energy()
     results[i, 2] = dissipated_energy()
- 
+
     xdmf_u.write(u, t)
     xdmf_d.write(d, t)
  
