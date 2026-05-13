@@ -26,7 +26,7 @@ gmsh.model.occ.cut([(2, 1)], [(2, 2)])
 gmsh.model.occ.synchronize()
 
 # Mesh size control
-lc = 0.010  # adjust: smaller = finer mesh
+lc = 0.025  # adjust: smaller = finer mesh
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
 
@@ -69,6 +69,8 @@ print("Mesh created successfully with", mesh.num_cells(), "cells")
 Vu = VectorFunctionSpace(mesh, "CG", 1)   # displacement
 Vd = FunctionSpace(mesh,       "CG", 1)   # damage / phase-field
 Vs = TensorFunctionSpace(mesh, "DG", 0)   # stress (for output only)
+Vscalar = FunctionSpace(mesh, "DG", 0)
+Vvector = VectorFunctionSpace(mesh, "DG", 0)
  
 u    = Function(Vu, name="Displacement")
 d    = Function(Vd, name="Damage")
@@ -169,7 +171,7 @@ solver_u  = NonlinearVariationalSolver(problem_u)
 prm = solver_u.parameters
 prm["newton_solver"]["absolute_tolerance"] = 1e-8
 prm["newton_solver"]["relative_tolerance"] = 1e-7
-prm["newton_solver"]["maximum_iterations"] = 125
+prm["newton_solver"]["maximum_iterations"] = 25
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
 prm["newton_solver"]["report"]             = True
 
@@ -205,10 +207,29 @@ def dissipated_energy():
 xdmf_u = XDMFFile("phase_field_no_mfront_displacement.xdmf")
 xdmf_d = XDMFFile("phase_field_no_mfront_damage.xdmf")
 
-for f in [xdmf_u, xdmf_d]:
+xdmf_H      = XDMFFile("history.xdmf")
+xdmf_psip   = XDMFFile("psi_plus.xdmf")
+xdmf_strain = XDMFFile("strain.xdmf")
+xdmf_stress = XDMFFile("stress.xdmf")
+xdmf_umag   = XDMFFile("u_magnitude.xdmf")
+xdmf_sigma1 = XDMFFile("principal_stress.xdmf")
+xdmf_grad_d = XDMFFile("grad_damage.xdmf")
+
+for f in [ xdmf_u, xdmf_d, xdmf_stress, xdmf_strain, xdmf_H, xdmf_psip, xdmf_umag, xdmf_sigma1, xdmf_grad_d ]:
     f.parameters["flush_output"]         = True
     f.parameters["functions_share_mesh"] = True
- 
+
+def save_plot(field, title, filename, vmin=None, vmax=None):
+    plt.figure(figsize=(6,5))
+    p = plot(field, vmin=vmin, vmax=vmax)
+    plt.colorbar(p)
+    plt.title(title)
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.tight_layout()
+    plt.savefig(filename, dpi=400)
+    plt.close()
+
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
@@ -241,6 +262,8 @@ for i, t in enumerate(loading):
         j += 1
  
     # ---- Post-processing ----
+
+    # Reaction force
     n = FacetNormal(mesh)
     traction = dot(sigma_degraded(u, d), n)
     reaction = assemble(dot(traction, as_vector((0,1))) * ds(1)) # top bdry is 1 so ds(1) integrates only there.
@@ -248,20 +271,152 @@ for i, t in enumerate(loading):
     results[i, 1] = stored_energy()
     results[i, 2] = dissipated_energy()
 
+    # -------------------------------------------------
+    # FIELD COMPUTATIONS
+    # -------------------------------------------------
+    
+    # Stress tensor
+    sigma_expr = sigma_degraded(u, d)
+    
+    sigma_out = project(sigma_expr, Vs)
+    
+    # Strain tensor
+    strain_expr = eps(u)
+    
+    strain_out = project(strain_expr, Vs)
+    
+    # Tensile energy density
+    psip_expr = psi_plus(u)
+    
+    psip_out = project(psip_expr, Vscalar)
+    
+    # History field
+    H_out = project(H, Vscalar)
+    
+    # Displacement magnitude
+    u_mag_expr = sqrt(dot(u, u))
+    
+    u_mag_out = project(u_mag_expr, Vscalar)
+    
+    # Maximum principal stress
+    sigma1_expr = (
+        0.5*(sigma_expr[0,0] + sigma_expr[1,1])
+        +
+        sqrt(
+            ((sigma_expr[0,0]-sigma_expr[1,1])/2)**2
+            +
+            sigma_expr[0,1]**2
+        )
+    )
+    
+    sigma1 = project(sigma1_expr, Vscalar)
+    
+    # Damage gradient magnitude
+    grad_d_expr = sqrt(dot(grad(d), grad(d)))
+    
+    grad_d = project(grad_d_expr, Vscalar)
+    
+    # Stress components
+    sigma_xx = project(sigma_out[0,0], Vscalar)
+    sigma_yy = project(sigma_out[1,1], Vscalar)
+    sigma_xy = project(sigma_out[0,1], Vscalar)
+    
+    # Strain components
+    eps_xx = project(strain_out[0,0], Vscalar)
+    eps_yy = project(strain_out[1,1], Vscalar)
+    eps_xy = project(strain_out[0,1], Vscalar)
+    
+    # -------------------------------------------------
+    # WRITE XDMF OUTPUT
+    # -------------------------------------------------
+    
     xdmf_u.write(u, t)
     xdmf_d.write(d, t)
- 
+    
+    xdmf_stress.write(sigma_out, t)
+    xdmf_strain.write(strain_out, t)
+   
+    xdmf_H.write(H_out, t)
+    xdmf_psip.write(psip_out, t)
+    
+    xdmf_umag.write(u_mag_out, t)
+    
+    xdmf_sigma1.write(sigma1, t)
+    
+    xdmf_grad_d.write(grad_d, t)
+    
+    # -------------------------------------------------
+    # SAVE 2D FIELD PLOTS
+    # -------------------------------------------------
+    
     clear_output(wait=True)
-    plt.figure()
-    p = plot(d, vmin=0, vmax=1)
-    plt.colorbar(p)
-    plt.title("Damage  t={:.4f}".format(t))
-    plt.savefig("./results/phase_field_{:04d}.png".format(i), dpi=400)
-    plt.close()
+    
+    save_plot(
+        d,
+        "Damage",
+        "./results/damage_{:04d}.png".format(i),
+        vmin=0,
+        vmax=1
+    )
+    
+    save_plot(
+        sigma_yy,
+        "sigma_yy",
+        "./results/sigma_yy_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        sigma_xx,
+        "sigma_xx",
+        "./results/sigma_xx_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        sigma_xy,
+        "sigma_xy",
+        "./results/sigma_xy_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        psip_out,
+        "psi_plus",
+        "./results/psi_plus_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        H_out,
+        "History",
+        "./results/history_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        sigma1,
+        "Principal stress",
+        "./results/principal_stress_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        grad_d,
+        "|grad d|",
+        "./results/grad_d_{:04d}.png".format(i)
+    )
+    
+    save_plot(
+        u_mag_out,
+        "|u|",
+        "./results/u_mag_{:04d}.png".format(i)
+    )
  
 xdmf_u.close()
 xdmf_d.close()
- 
+xdmf_stress.close()
+xdmf_strain.close()
+xdmf_H.close()
+xdmf_psip.close()
+xdmf_umag.close()
+xdmf_sigma1.close()
+xdmf_grad_d.close()
+
 #Summary Plots
 plt.figure()
 plt.plot(loading, results[:, 0], "-o")
