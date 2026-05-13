@@ -1,3 +1,333 @@
-The staggered problem involves fixing d, then solving u. Then with this updated u, we solve for d.
+# Phase-Field Fracture Simulation in FEniCS + MFront
 
-In order to better understadn the Staggered approach, we will first write code to solve the u and then the d problem separately. 
+## Overview
+
+This project implements a staggered phase-field formulation for brittle fracture using:
+
+FEniCS for finite-element discretization and global variational solves a phase-field regularization of Griffith fracture
+
+The problem considered is a square plate containing a circular inclusion/hole subjected to displacement-controlled tensile loading.
+
+The simulation captures:
+
+1. Crack nucleation
+2. Crack propagation
+3. Stress redistribution
+4. Energy dissipation during fracture
+
+without explicitly tracking crack surfaces.
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+# Physical Problem
+
+1. The computational domain is:
+
+   a. square plate of dimensions:
+      Width = 1
+      Height = 1
+
+   b. A circular hole/inclusion:
+      Center = (0.5, 0.5)
+      Radius = 0.2
+
+2. The structure is subjected to:
+   Fixed displacement on the inclusion boundary
+   Increasing upward displacement on the top boundary
+
+This creates strong stress concentrations near the hole boundary, eventually leading to fracture initiation and propagation.
+
+----------------------------------------------------------------------------------------------------------------------------------------
+
+# Phase-Field Fracture Formulation
+
+## Core Idea
+
+Instead of representing cracks as discontinuities, the crack is approximated using a smooth scalar field:
+
+* d = 0 : intact material
+* d = 1 : fully broken material
+
+The crack is therefore represented as a diffuse damaged region whose width is controlled by the regularization length parameter l0.
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+# Total Energy Functional
+
+The simulation minimizes the total energy:
+    Elastic strain energy
+    Fracture surface energy
+
+The total energy contains:
+1. Degraded elastic energy
+2. Fracture regularization term
+3. Crack surface dissipation term
+
+The degradation function is:
+
+g(d) = (1 - d)^2 + kres
+
+where:
+
+* d is the phase-field damage variable
+* kres is a small residual stiffness preventing singular stiffness matrices.
+
+------------------------------------------------------------------------------------------------------------------------------------------
+
+# Energy Splitting
+
+The implementation uses unilateral fracture conditions to prevent crack growth in compression.
+
+The strain energy density is split into:
+* Positive tensile part
+* Negative compressive part
+
+Only the tensile contribution is degraded by the damage field.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Numerical Formulation
+
+## Staggered Alternate Minimization
+
+The coupled displacement-damage problem is solved using an alternate minimization procedure.
+
+At each load increment:
+
+1. Solve displacement problem for fixed damage
+2. Update history field
+3. Solve damage problem for fixed displacement
+4. Repeat until convergence
+
+This approach is often referred to as:
+
+* Staggered scheme
+* Operator splitting
+* Alternate minimization
+---------------------------------------------------------------------------------------------------------------------------
+
+# Displacement Problem
+
+The displacement problem solves mechanical equilibrium:
+
+* Stress depends on both displacement and damage
+* Material stiffness degrades as damage increases
+
+The stress tensor includes:
+
+* Tensile contribution
+* Deviatoric contribution
+* Compressive contribution
+
+with degradation applied only to tensile states.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Damage Problem
+
+The phase-field damage equation contains:
+
+* A local damage term
+* A gradient regularization term
+* A history-dependent crack driving force
+
+The gradient term regularizes the crack and prevents mesh-dependent localization.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# History Field and Irreversibility
+
+A history field H is used to enforce irreversible fracture.
+
+The history field stores:
+
+* The maximum tensile elastic energy ever attained at each material point.
+
+This prevents:
+
+* Crack healing during unloading
+* Re-stiffening of damaged regions
+
+The history field is updated as:
+
+H = max(H_old, psi_plus)
+
+where psi_plus is the tensile strain energy density.
+
+Additionally, the implementation enforces:
+
+* d_new >= d_old
+
+pointwise.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Material Parameters
+
+Typical parameters used:
+
+* Young's modulus:
+
+  * E = 200
+
+* Poisson ratio:
+
+  * nu = 0.2
+
+* Fracture toughness:
+
+  * Gc = 1.0
+
+* Regularization length:
+
+  * l0 = 0.02
+
+* Residual stiffness:
+
+  * kres = 1e-6
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Mesh Generation
+
+The geometry is generated using:
+
+* gmsh
+
+The mesh is then imported into:
+
+* FEniCS
+
+The mesh uses triangular finite elements.
+
+Refinement near the hole is important because:
+
+* Stress gradients are large
+* Crack nucleation occurs near the inclusion boundary
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Outputs
+
+The simulation produces:
+
+## Field Outputs
+
+* Displacement field
+* Damage field
+* Stress tensor
+
+stored in:
+
+* XDMF format
+
+for visualization in ParaView.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Visualization Outputs
+
+PNG images of:
+
+* Damage evolution
+* Stress components
+
+can be generated at every load increment.
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Global Quantities
+
+The simulation computes:
+
+* Load-displacement curve
+* Elastic energy evolution
+* Fracture energy evolution
+* Total energy evolution
+
+These curves help identify:
+
+* Crack nucleation
+* Peak load
+* Post-fracture softening
+* Energy dissipation
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# MFront Integration
+
+The MFront version delegates constitutive updates to compiled material behaviors.
+
+Advantages:
+
+* Quadrature-point state variables
+* Consistent tangent operators
+* Better Newton convergence
+* Industrial-style constitutive integration
+
+The MFront implementation requires:
+
+* MGIS/FEniCS
+* MFront
+* Compiled shared behavior libraries
+
+Typical compilation:
+
+mfront --obuild *.mfront
+
+which generates:
+
+* libBehaviour.so
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Software Dependencies
+
+Typical requirements:
+
+* Python
+* FEniCS
+* gmsh
+* numpy
+* matplotlib
+* pygmsh
+
+Optional:
+
+* MGIS/FEniCS
+* MFront
+* ParaView
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# Typical Fracture Behavior
+
+The simulation generally exhibits:
+
+1. Initial elastic response
+2. Stress concentration near the hole
+3. Sudden crack nucleation
+4. Stable crack propagation
+5. Softening response after fracture
+
+The crack path depends on:
+
+* Energy split formulation
+* Mesh resolution
+* Fracture toughness
+* Regularization length
+* Loading conditions
+
+
+---------------------------------------------------------------------------------------------------------------------------
+
+# References
+
+Key foundational works include:
+
+* Francfort & Marigo (1998)
+* Bourdin et al. (2000)
+* Miehe et al. (2010)
+* Amor et al. (2009)
+* Ambrosio & Tortorelli regularization methods
+
