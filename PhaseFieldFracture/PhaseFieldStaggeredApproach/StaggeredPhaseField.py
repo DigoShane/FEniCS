@@ -8,6 +8,20 @@ import pygmsh
 import gmsh
 import meshio
 
+import os
+import shutil
+
+# -------------------------------------------------
+# Reset results folder
+# -------------------------------------------------
+
+results_dir = "results"
+
+if os.path.exists(results_dir):
+    shutil.rmtree(results_dir)
+
+os.makedirs(results_dir)
+
 # ------------------------------
 #          MESH GENERATION
 # ------------------------------
@@ -80,7 +94,7 @@ lmbda  = Constant(E * nu / ((1 + nu) * (1 - 2 * nu)))
 mu     = Constant(E / (2 * (1 + nu)))
 kappa  = Constant(lmbda + 2.0/3.0 * mu)   # bulk modulus
 
-kres  = Constant(1e-6)          # residual stiffness
+kres  = Constant(1e-3)          # residual stiffness
 Gc    = Constant(1.0)           # critical energy release rate
 l0    = Constant(0.02)          # phase-field length scale
 
@@ -167,11 +181,12 @@ solver_u  = NonlinearVariationalSolver(problem_u)
 
 # Typical parameters (adjust as needed)
 prm = solver_u.parameters
-prm["newton_solver"]["absolute_tolerance"] = 1e-8
-prm["newton_solver"]["relative_tolerance"] = 1e-7
+prm["newton_solver"]["absolute_tolerance"] = 1e-5
+prm["newton_solver"]["relative_tolerance"] = 1e-4
 prm["newton_solver"]["maximum_iterations"] = 125
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
 prm["newton_solver"]["report"]             = True
+prm["newton_solver"]["relaxation_parameter"] = 0.2
 
 dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
@@ -212,8 +227,8 @@ for f in [xdmf_u, xdmf_d]:
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
-#loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 425e-3, 26)[1:]))   # skip first zero if you want
-loading = np.linspace(0, 425e-3, 62)
+loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 300e-3, 120)[1:]))   # skip first zero if you want
+#loading = np.linspace(0, 300e-3, 150)
 N_steps = loading.shape[0]
 results = np.zeros((N_steps, 3))   # [force, elastic energy, fracture energy]
  
