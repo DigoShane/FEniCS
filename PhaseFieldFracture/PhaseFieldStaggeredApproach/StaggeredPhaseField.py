@@ -40,7 +40,7 @@ gmsh.model.occ.cut([(2, 1)], [(2, 2)])
 gmsh.model.occ.synchronize()
 
 # Mesh size control
-lc = 0.010  # adjust: smaller = finer mesh
+lc = 0.025  # adjust: smaller = finer mesh
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
 
