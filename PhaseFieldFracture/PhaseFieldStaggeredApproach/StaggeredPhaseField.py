@@ -93,7 +93,7 @@ lmbda  = Constant(E * nu / ((1 + nu) * (1 - 2 * nu)))
 mu     = Constant(E / (2 * (1 + nu)))
 kappa  = Constant(lmbda + 2.0/3.0 * mu)   # bulk modulus
 
-kres  = Constant(1e-3)          # residual stiffness
+kres  = Constant(1e-6)          # residual stiffness
 Gc    = Constant(1.0)           # critical energy release rate
 l0    = Constant(0.02)          # phase-field length scale
 

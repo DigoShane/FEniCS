@@ -273,7 +273,7 @@ for f in [xdmf_u, xdmf_d]:
 
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((np.linspace(0, 70e-3, 6), np.linspace(70e-3, 325e-3, 80)[1:]))
+loading = np.concatenate((np.linspace(0, 70e-3, 6), np.linspace(70e-3, 225e-3, 80)[1:]))
 
 N_steps = loading.shape[0]
 
