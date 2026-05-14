@@ -10,6 +10,22 @@ import pygmsh
 import gmsh
 #import meshio
 
+# ---------------- NEW ----------------
+import os
+import shutil
+
+# -------------------------------------------------
+# Reset results folder
+# -------------------------------------------------
+
+results_dir = "results"
+
+if os.path.exists(results_dir):
+    shutil.rmtree(results_dir)
+
+os.makedirs(results_dir)
+
+
 L, Ht = 1.0, 1.0
 a = 0.2   # crack length
 eps_geom = 1e-3
@@ -29,7 +45,7 @@ gmsh.model.occ.synchronize()
 
 
 #mesh size control
-lc = 0.02
+lc = 0.01
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
 
