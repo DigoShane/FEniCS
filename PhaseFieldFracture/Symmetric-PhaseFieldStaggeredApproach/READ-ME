@@ -114,147 +114,18 @@ depends on the damage field through the degradation function.
 
 The damage problem is solved as a linear variational problem.
 
-# ------------------------------------------------------------
-# Why the Full-Domain Simulation Was Problematic
-# ------------------------------------------------------------
-
-Although the geometry and loading were symmetric,
-the fracture propagation became asymmetric.
-
-Possible reasons include:
-
-1. Mesh-induced anisotropy
-2. Triangulation bias
-3. Numerical perturbations
-4. Localization instability
-5. True bifurcation of the symmetric crack path
-
-Near crack propagation, the nonlinear solver frequently
-oscillated between competing crack states and failed to
-converge.
-
-This suggested that the symmetric crack configuration
-might become unstable beyond a critical loading.
-
-Because the asymmetry depended strongly on the mesh,
-the simulation was reformulated using a symmetry boundary
-condition.
-
-# ------------------------------------------------------------
-# Half-Domain Reformulation
-# ------------------------------------------------------------
-
-Instead of solving the full domain:
-
-#   [0,1] x [0,1]
-
-the simulation solves only:
-
-#   [0,0.5] x [0,1]
-
-This corresponds to the LEFT half of the original problem.
-
-The vertical plane:
-
-#   x = 0.5
-
-acts as a symmetry plane.
 
 # ------------------------------------------------------------
 # Symmetry Boundary Condition
 # ------------------------------------------------------------
 
-To enforce mirror symmetry across:
-
-#   x = 0.5
-
+To enforce mirror symmetry across x = 0.5,
 the following condition is imposed:
-
 #   u_x = 0
-
 on the symmetry boundary.
 
-This means:
+Importantly u_y is left unconstrained.
 
-- no horizontal displacement across the symmetry plane
-- no penetration through the mirror plane
-
-Importantly:
-
-#   u_y
-
-is left unconstrained.
-
-This allows the body to deform vertically while enforcing
-symmetric horizontal motion.
-
-In FEniCS this is implemented as:
-
-#   bc_sym = DirichletBC(
-#       Vu.sub(0),
-#       Constant(0.0),
-#       symmetry
-#   )
-
-where:
-
-#   Vu.sub(0)
-
-selects the x-component of the displacement field.
-
-# ------------------------------------------------------------
-# Important Interpretation
-# ------------------------------------------------------------
-
-The half-domain simulation DOES NOT prove that symmetric
-crack propagation is the physically preferred solution.
-
-Instead, it constrains the simulation onto the symmetric
-branch of the solution space.
-
-The original full-domain simulation may still possess
-a genuine symmetry-breaking bifurcation in which one
-crack dominates the other.
-
-The half-domain formulation is therefore useful for:
-
-1. Eliminating mesh-induced asymmetry
-2. Studying the symmetric fracture branch
-3. Improving nonlinear solver robustness
-4. Reducing computational cost
-5. Comparing against the unconstrained full-domain problem
-
-# ------------------------------------------------------------
-# Mesh Generation
-# ------------------------------------------------------------
-
-The mesh is generated using Gmsh.
-
-The geometry consists of:
-
-- half rectangle
-- circular cutout
-
-The mesh uses:
-
-- Frontal-Delaunay meshing
-- deterministic random seed
-- refined mesh resolution
-
-to reduce mesh-induced directional bias.
-
-# ------------------------------------------------------------
-# Boundary Conditions
-# ------------------------------------------------------------
-
-1. Top boundary:
-   displacement-controlled loading
-
-2. Circular hole:
-   fully fixed displacement
-
-3. Symmetry boundary:
-   u_x = 0
 
 # ------------------------------------------------------------
 # Outputs

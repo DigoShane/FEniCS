@@ -14,7 +14,6 @@ import shutil
 # -------------------------------------------------
 # Reset results folder
 # -------------------------------------------------
-
 results_dir = "results"
 
 if os.path.exists(results_dir):
@@ -186,7 +185,7 @@ prm["newton_solver"]["relative_tolerance"] = 1e-4
 prm["newton_solver"]["maximum_iterations"] = 125
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
 prm["newton_solver"]["report"]             = True
-prm["newton_solver"]["relaxation_parameter"] = 0.2
+prm["newton_solver"]["relaxation_parameter"] = 0.5
 
 dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
@@ -227,7 +226,7 @@ for f in [xdmf_u, xdmf_d]:
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 300e-3, 120)[1:]))   # skip first zero if you want
+loading = np.concatenate((np.linspace(0,   70e-3,  6), np.linspace(70e-3, 400e-3, 120)[1:]))   # skip first zero if you want
 #loading = np.linspace(0, 300e-3, 150)
 N_steps = loading.shape[0]
 results = np.zeros((N_steps, 3))   # [force, elastic energy, fracture energy]
