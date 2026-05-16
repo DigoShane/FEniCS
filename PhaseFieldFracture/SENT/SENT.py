@@ -16,7 +16,7 @@ import shutil
 
 base_dir = "results"
 
-subdirs = [ "damage", "sxx", "syy", "sxy", "von", "sigma1", "sigma2", "damage_contours" ]
+subdirs = [ "damage", "sxx", "syy", "sxy", "von", "sigma1", "sigma2" ]
 
 # Remove previous results
 if os.path.exists(base_dir):
@@ -124,8 +124,6 @@ AutoSubDomain(top).mark(boundaries, top_id)
 AutoSubDomain(bottom).mark(boundaries, bottom_id)
 
 ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
-
-def bottom(x, on_boundary):
 
 #disp controlled loading.
 Uimp = Expression(("0", "t"), t=0.0, degree=0)
@@ -332,35 +330,35 @@ for i, t in enumerate(loading):
     p = plot(d, vmin=0, vmax=1)
     plt.colorbar(p)
     plt.title("Damage  t={:.4f}".format(t))
-    plt.savefig("./results_d/phase_field_{:04d}.png".format(i), dpi=400)
+    plt.savefig("./results/damage/phase_field_{:04d}.png".format(i), dpi=400)
     plt.close()
 
     plt.figure()
     p = plot(sxx)
     plt.colorbar(p)
     plt.title(f"sigma_xx t={t:.4f}")
-    plt.savefig(f"./results_sxx/sxx_{i:04d}.png")
+    plt.savefig(f"./results/sxx/sxx_{i:04d}.png")
     plt.close()
 
     plt.figure()
     p = plot(syy)
     plt.colorbar(p)
     plt.title(f"sigma_yy t={t:.4f}")
-    plt.savefig(f"./results_syy/syy_{i:04d}.png")
+    plt.savefig(f"./results/syy/syy_{i:04d}.png")
     plt.close()
 
     plt.figure()
     p = plot(sxy)
     plt.colorbar(p)
     plt.title(f"sigma_xy t={t:.4f}")
-    plt.savefig(f"./results_sxy/sxy_{i:04d}.png")
+    plt.savefig(f"./results/sxy/sxy_{i:04d}.png")
     plt.close()
 
     plt.figure()
     p = plot(von)
     plt.colorbar(p)
     plt.title(f"von Mises t={t:.4f}")
-    plt.savefig(f"./results_von/von_{i:04d}.png")
+    plt.savefig(f"./results/von/von_{i:04d}.png")
     plt.close()
 
     plt.figure()
