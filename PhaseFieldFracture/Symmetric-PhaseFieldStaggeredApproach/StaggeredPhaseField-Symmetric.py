@@ -279,6 +279,20 @@ N_steps = loading.shape[0]
 
 results = np.zeros((N_steps, 3))
 
+#Stress tracking arrays
+sigma_tip_xx  = np.zeros(N_steps)
+sigma_tip_yy  = np.zeros(N_steps)
+sigma_tip_xy  = np.zeros(N_steps)
+
+sigma_left_xx = np.zeros(N_steps)
+sigma_left_yy = np.zeros(N_steps)
+sigma_left_xy = np.zeros(N_steps)
+
+
+#points of interest for stress:
+tip_point = Point(0.5, 0.7) #top of circle
+left_point = Point(0.3, 0.5) #left end of circle
+
 for i, t in enumerate(loading):
 
     print( "Time step: {}  (u_imp = {:.4f})".format(i+1, t) )
@@ -309,6 +323,22 @@ for i, t in enumerate(loading):
     results[i,0] = reaction
     results[i,1] = stored_energy()
     results[i,2] = dissipated_energy()
+    
+    sigma_proj = project(sigma_degraded(u, d),Vs)
+
+    # Evaluate stresses at tip
+    sigma_tip = sigma_proj(tip_point)
+    
+    sigma_tip_xx[i] = sigma_tip[0]
+    sigma_tip_xy[i] = sigma_tip[1]
+    sigma_tip_yy[i] = sigma_tip[3]
+    
+    # Evaluate stresses at left point
+    sigma_left = sigma_proj(left_point)
+    
+    sigma_left_xx[i] = sigma_left[0]
+    sigma_left_xy[i] = sigma_left[1]
+    sigma_left_yy[i] = sigma_left[3]
 
     xdmf_u.write(u, t)
     xdmf_d.write(d, t)
@@ -334,12 +364,15 @@ xdmf_d.close()
 #--------------------------------------------------------------------------------
 # Summary plots
 
+# force vs displacement
 plt.figure()
 plt.plot(loading, results[:,0], "-o")
 plt.xlabel("Imposed displacement")
 plt.ylabel("Vertical force")
 plt.title("Load-displacement curve")
 plt.show()
+
+# Energy evolution versus displacement
 plt.figure()
 plt.plot(loading, results[:,1], label="elastic energy")
 plt.plot(loading, results[:,2],label="fracture energy")
@@ -349,3 +382,45 @@ plt.ylabel("Energies")
 plt.legend()
 plt.title("Energy evolution")
 plt.show()
+
+#Stress evolution at crack tip
+plt.figure(figsize=(8,6))
+plt.plot(loading, sigma_tip_xx, label=r'$\sigma_{xx}$')
+plt.plot(loading, sigma_tip_yy, label=r'$\sigma_{yy}$')
+plt.plot(loading, sigma_tip_xy, label=r'$\sigma_{xy}$')
+plt.xlabel("Applied displacement")
+plt.ylabel("Stress at crack tip")
+plt.title("Stress evolution at crack tip")
+plt.legend()
+plt.grid(True)
+plt.savefig("stress_tip_vs_displacement.png", dpi=400)
+plt.show()
+
+
+# Stress evolution at left end of circle
+plt.figure(figsize=(8,6))
+plt.plot(loading, sigma_left_xx, label=r'$\sigma_{xx}$')
+plt.plot(loading, sigma_left_yy, label=r'$\sigma_{yy}$')
+plt.plot(loading, sigma_left_xy, label=r'$\sigma_{xy}$')
+plt.xlabel("Applied displacement")
+plt.ylabel("Stress at left end")
+plt.title("Stress evolution at left end of circle")
+plt.legend()
+plt.grid(True)
+plt.savefig("stress_left_vs_displacement.png", dpi=400)
+plt.show()
+
+
+#--------------------------------------------------------------------------------
+# Save results
+
+
+#top of circle
+tip_data = np.column_stack(( loading, sigma_tip_xx, sigma_tip_yy, sigma_tip_xy))
+np.savetxt("stress_tip_vs_displacement.txt", tip_data, header="displacement sigma_xx sigma_yy sigma_xy")
+
+#left of circle
+left_data = np.column_stack(( loading, sigma_left_xx, sigma_left_yy, sigma_left_xy))
+
+np.savetxt("stress_left_vs_displacement.txt", left_data, header="displacement sigma_xx sigma_yy sigma_xy")
+
