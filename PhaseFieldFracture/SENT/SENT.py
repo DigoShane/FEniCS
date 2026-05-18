@@ -48,7 +48,7 @@ gmsh.model.occ.synchronize()
 
 
 #mesh size control
-lc = 0.004
+lc = 0.001
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
 
@@ -226,7 +226,7 @@ prm["newton_solver"]["absolute_tolerance"] = 1e-8
 prm["newton_solver"]["relative_tolerance"] = 1e-7
 prm["newton_solver"]["maximum_iterations"] = 25
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
-prm["newton_solver"]["report"]             = True
+prm["newton_solver"]["report"]             = False
 
 dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
@@ -275,6 +275,9 @@ tip_sxx = np.zeros(N_steps)
 tip_syy = np.zeros(N_steps)
 tip_sxy = np.zeros(N_steps)
 tip_vm  = np.zeros(N_steps)
+
+tip_x = a + 2*lc
+tip_y = Ht/2
  
 for i, t in enumerate(loading):
     print("Time step: {}  (u_imp = {:.4f})".format(i+1, t))
@@ -376,8 +379,6 @@ for i, t in enumerate(loading):
     plt.close()
 
     #computing the stress at the tip:
-    tip_x = a + 2*lc
-    tip_y = Ht/2
     tip_sxx[i] = sxx(tip_x, tip_y)
     tip_syy[i] = syy(tip_x, tip_y)
     tip_sxy[i] = sxy(tip_x, tip_y)
