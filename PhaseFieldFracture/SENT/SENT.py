@@ -44,11 +44,11 @@ rect = gmsh.model.occ.addRectangle(0, 0, 0, L, Ht, tag=1)
 crack = gmsh.model.occ.addRectangle(0, Ht/2 - eps_geom, 0, a, 2*eps_geom, tag=2)
 
 gmsh.model.occ.cut([(2, rect)], [(2, crack)], removeObject=True, removeTool=True)
-gmsh.model.occ.synchronize()
+gmsh.model.occ.syncshronize()
 
 
 #mesh size control
-lc = 0.001
+lc = 0.008
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
 
@@ -222,11 +222,11 @@ solver_u  = NonlinearVariationalSolver(problem_u)
 
 # Typical parameters (adjust as needed)
 prm = solver_u.parameters
-prm["newton_solver"]["absolute_tolerance"] = 1e-8
-prm["newton_solver"]["relative_tolerance"] = 1e-7
+prm["newton_solver"]["absolute_tolerance"] = 1e-5
+prm["newton_solver"]["relative_tolerance"] = 1e-4
 prm["newton_solver"]["maximum_iterations"] = 25
 prm["newton_solver"]["linear_solver"]      = "mumps"   # or "lu", "superlu_dist"
-prm["newton_solver"]["report"]             = False
+prm["newton_solver"]["report"]             = True
 
 dd  = TrialFunction(Vd) 
 q   = TestFunction(Vd)
@@ -266,7 +266,7 @@ for f in [xdmf_u, xdmf_d]:
 #Load-Stepping Loop
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((np.linspace(0,   70e-3,  12), np.linspace(70e-3, 500e-3, 56)[1:]))   # skip first zero if you want
+loading = np.concatenate((np.linspace(0,   0.14,  12), np.linspace(0.14, 0.2, 56)[1:]))   # skip first zero if you want
 N_steps = loading.shape[0]
 results = np.zeros((N_steps, 4))# 0 -> force, 1 -> elastic energy, 2 -> fracture energy, 3 -> max damage
  
