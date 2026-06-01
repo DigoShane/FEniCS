@@ -143,7 +143,7 @@ for tt in range(NN):
            +np.linalg.norm(np.asarray(Fa2_vec.get_local()))\
            +np.linalg.norm(np.asarray(Ft_vec.get_local()))\
            +np.linalg.norm(np.asarray(Fu_vec.get_local()))
- print(tol_test)
+ #print(tol_test)
  if float(tol_test)  < tol :
   break
  
@@ -179,7 +179,7 @@ print("Energy density =", pie)
 print("gamma =", gamma)
 print("NN =", NN)
 print("H =", float(H))
-print("tol =", tol)
+print("tol =", tol_test)
 print("read_in =", read_in)
 
 c = plot(u)
