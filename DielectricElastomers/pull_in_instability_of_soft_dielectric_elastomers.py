@@ -101,7 +101,6 @@ u_test, p_test, phi_test = split(w_test)  # test fields
 #Trial functions needed for automatic differentiation
 dw = TrialFunction(ME)
 
-#  Define vector and scalar spaces for storing old values of velocity and acceleration
 #  They are also used  later for visualization of results
 W2 = FunctionSpace(mesh, U2)  # Vector space
 W  = FunctionSpace(mesh, P1)   # Scalar space
@@ -247,12 +246,6 @@ def save_scalar_png(scalar_function, folder, name, t, vmin_plot=None, vmax_plot=
     plt.figure(figsize=(6, 4))
     p_plot = plt.tripcolor( coords[:, 0], coords[:, 1], values, triangles=cells, shading="gouraud", vmin=vmin_plot, vmax=vmax_plot)
     plt.colorbar(p_plot)
-
-    #if abs(vmax - vmin) < 1e-12:
-    #    plt.title(f"{name}, t = {t:.4f}\nconstant value = {vmin:.4e}")
-    #else:
-    #    plt.title(f"{name}, t = {t:.4f}\nmin = {vmin:.4e}, max = {vmax:.4e}")
-
     plt.xlabel("x")
     plt.ylabel("y")
     plt.axis("equal")
@@ -260,13 +253,8 @@ def save_scalar_png(scalar_function, folder, name, t, vmin_plot=None, vmax_plot=
 
     filename = f"{name}_t_{t:.4f}.png"
     filepath = os.path.join(folder, filename)
-
     plt.savefig(filepath, dpi=300)
     plt.close()
-
-def save_vector_magnitude_png(vector_function, folder, name, t):
-    magnitude = project(sqrt(dot(vector_function, vector_function)), W)
-    save_scalar_png(magnitude, folder, name, t)
 
 def project_and_save_scalar(expr, W, name, t, folder, vmin_plot=None, vmax_plot=None):
     field = project(expr, W)
@@ -324,12 +312,6 @@ def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, t, vector_scale=
 
     cbar = plt.colorbar(q)
     cbar.set_label(r"$|E_R|/E_0$")
-
-    if abs(Emax - Emin) < 1e-12:
-        plt.title(f"{name}, t = {t:.4f}\nconstant |E_R|/E0 = {Emin:.4e}")
-    else:
-        plt.title(f"{name}, t = {t:.4f}\nmin |E_R|/E0 = {Emin:.4e}, max |E_R|/E0 = {Emax:.4e}")
-
     plt.xlabel("x")
     plt.ylabel("y")
     plt.axis("equal")
@@ -339,7 +321,6 @@ def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, t, vector_scale=
 
     filename = f"{name}_t_{t:.4f}.png"
     filepath = os.path.join(folder, filename)
-
     plt.savefig(filepath, dpi=300)
     plt.close()
 
