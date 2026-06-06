@@ -53,31 +53,14 @@ I_m     = 175        # Gent locking paramter
 # Electrostatic  parameters
 vareps_0 = Constant(8.85E-3)         #  permittivity of free space pF/mm
 vareps_r = Constant(5)             #  relative permittivity, dimensionless
-vareps   = vareps_r*vareps_0         #  permittivity of the material
+vareps   = vareps_0*vareps_r         #  permittivity of the material
 
-# Simulation time control-related params
-t        = 0.0           # start time (s)
-rampRate = float(input("Enter the ramp rate: ")) # s^{-1}
-Ttot     = 1.0/rampRate  # total simulation time (s)
-numSteps = int(input("Enter the number of steps: "))
-dt       = Ttot/numSteps       # (fixed) step size
-dk       = Constant(dt)
+# Applied potential on the top electrode (physical units, consistent with vareps)
+phi_app = float(input("Enter the applied potential on the top electrode: "))
 
-# Normalization parameter for voltage is l*sqrt(Geq_0/vareps)
-phiTot = 1.25* float(length*np.sqrt(float(Geq_0)/float(vareps)))  # final normalized value of phi
-
-# Electric potential scale:
-phi_scale = float(length*np.sqrt(float(Geq_0)/float(vareps)))
-# Electric field scale:
-E_scale = float(np.sqrt(float(Geq_0)/float(vareps)))
-# Stress scale:
-stress_scale = float(Geq_0)
-# The final nominal normalized voltage is 1.25 in the present code
-phi_factor = phiTot/phi_scale
-
-# Boundary condition to ramp up electrostatic potential
-phiRamp = Expression(("phi_tot*t/Ttot"),
-                      t = 0.0, phi_tot = phiTot, Ttot=Ttot, degree=1)
+# Fixed spatial distribution of potential on the top boundary
+phiTop = Expression("phi_app*sin(pi*x[0]/L)",
+                    phi_app=phi_app, L=length, pi=np.pi, degree=3)
 
 # Define function space, both vectorial and scalar
 U2 = VectorElement("Lagrange", mesh.ufl_cell(), 2) # For displacement
@@ -113,8 +96,16 @@ total_stress_png_dir = os.path.join(base_png_dir, "total_cauchy_stress")
 maxw_stress_png_dir  = os.path.join(base_png_dir, "maxwell_cauchy_stress")
 cauchy_stress_png_dir = os.path.join(base_png_dir, "cauchy_stress")
 Eref_png_dir         = os.path.join(base_png_dir, "electric_field_reference")
+top_surface_stretch_png_dir = os.path.join(base_png_dir, "top_surface_stretch")
 
-all_png_dirs = [ total_stress_png_dir, maxw_stress_png_dir, cauchy_stress_png_dir, Eref_png_dir]
+center_node_values_dir = os.path.join(base_png_dir, "center_node_values")
+
+displacement_png_dir = os.path.join(base_png_dir, "displacement")
+
+all_png_dirs = [ total_stress_png_dir, maxw_stress_png_dir, 
+                 cauchy_stress_png_dir, Eref_png_dir,
+                 top_surface_stretch_png_dir,
+                 displacement_png_dir, center_node_values_dir]
 
 # Clear old PNG results only
 if os.path.exists(base_png_dir):
@@ -228,59 +219,44 @@ Res  =  Res_0 + Res_1 + Res_2
 # Automatic differentiation tangent:
 a = derivative(Res, w, dw)
 
-
-def save_scalar_png(scalar_function, folder, name, t, vmin_plot=None, vmax_plot=None):
+def save_scalar_png(scalar_function, folder, name, phi_app):
     os.makedirs(folder, exist_ok=True)
 
     coords = mesh.coordinates()
     cells = mesh.cells()
     values = scalar_function.compute_vertex_values(mesh)
 
-    if not np.all(np.isfinite(values)):
-        print(f"Skipping {name} at t = {t:.4f}: NaN or Inf detected.")
-        return
-
-    vmin = np.min(values)
-    vmax = np.max(values)
-
     plt.figure(figsize=(6, 4))
-    p_plot = plt.tripcolor( coords[:, 0], coords[:, 1], values, triangles=cells, shading="gouraud", vmin=vmin_plot, vmax=vmax_plot)
+    p_plot = plt.tripcolor( coords[:, 0], coords[:, 1], values, triangles=cells, shading="gouraud")
     plt.colorbar(p_plot)
     plt.xlabel("x")
     plt.ylabel("y")
     plt.axis("equal")
     plt.tight_layout()
 
-    filename = f"{name}_t_{t:.4f}.png"
+    filename = f"{name}_phi_{phi_app:.4f}.png"
     filepath = os.path.join(folder, filename)
     plt.savefig(filepath, dpi=300)
     plt.close()
 
-def project_and_save_scalar(expr, W, name, t, folder, vmin_plot=None, vmax_plot=None):
+def project_and_save_scalar(expr, W, name, phi_app, folder):
     field = project(expr, W)
     field.rename(name, " ")
-    save_scalar_png(field, folder, name, t, vmin_plot, vmax_plot)
+    save_scalar_png(field, folder, name, phi_app)
 
     return field
 
-def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, t, vector_scale=1.0, max_arrows_per_direction=20, normalize_arrows=True, vmin_plot=None, vmax_plot=None):
+def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, phi_app,
+                            max_arrows_per_direction=20, normalize_arrows=True):
     os.makedirs(folder, exist_ok=True)
 
-    Ex_fun = project(expr_x/vector_scale, W)
-    Ey_fun = project(expr_y/vector_scale, W)
+    Ex_fun = project(expr_x, W)
+    Ey_fun = project(expr_y, W)
     coords = mesh.coordinates()
     Ex = Ex_fun.compute_vertex_values(mesh)
     Ey = Ey_fun.compute_vertex_values(mesh)
 
-    if not np.all(np.isfinite(Ex)) or not np.all(np.isfinite(Ey)):
-        print(f"Skipping {name} at t = {t:.4f}: NaN or Inf detected.")
-        return
-
     Emag = np.sqrt(Ex**2 + Ey**2)
-
-    if not np.all(np.isfinite(Emag)):
-        print(f"Skipping {name} at t = {t:.4f}: NaN or Inf detected in magnitude.")
-        return
 
     num_vertices = coords.shape[0]
     target_arrows = max_arrows_per_direction**2
@@ -291,7 +267,7 @@ def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, t, vector_scale=
     arrow_Ey = Ey[::stride]
     arrow_Emag = Emag[::stride]
 
-    if normalize_arrows:
+    if normalize_arrows: #default val true, also passed as true.
         arrow_Ex_plot = np.zeros_like(arrow_Ex)
         arrow_Ey_plot = np.zeros_like(arrow_Ey)
         nonzero = arrow_Emag > 1e-14
@@ -301,33 +277,57 @@ def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, t, vector_scale=
         arrow_Ex_plot = arrow_Ex
         arrow_Ey_plot = arrow_Ey
 
-    Emin = np.min(Emag)
-    Emax = np.max(Emag)
-
     plt.figure(figsize=(6, 5))
-    q = plt.quiver( arrow_coords[:, 0], arrow_coords[:, 1], arrow_Ex_plot, arrow_Ey_plot, arrow_Emag, cmap="coolwarm", angles="xy", scale_units="xy", scale=25, width=0.004, clim=(vmin_plot, vmax_plot) if vmin_plot is not None and vmax_plot is not None else None)
-
-    if vmin_plot is not None and vmax_plot is not None:
-        q.set_clim(vmin_plot, vmax_plot)
+    q = plt.quiver( arrow_coords[:, 0], arrow_coords[:, 1], arrow_Ex_plot, arrow_Ey_plot, 
+    arrow_Emag, cmap="coolwarm", angles="xy", scale_units="xy", scale=25, width=0.004)
 
     cbar = plt.colorbar(q)
-    cbar.set_label(r"$|E_R|/E_0$")
+    cbar.set_label(r"$|E_R|$")
     plt.xlabel("x")
     plt.ylabel("y")
     plt.axis("equal")
-    plt.xlim(0.0, length)
-    plt.ylim(0.0, length)
     plt.tight_layout()
 
-    filename = f"{name}_t_{t:.4f}.png"
+    filename = f"{name}_phi_{phi_app:.4f}.png"
     filepath = os.path.join(folder, filename)
     plt.savefig(filepath, dpi=300)
     plt.close()
 
-def writeResults(t):
+def plot_top_surface_stretch(phi_app, F22_field):
+    os.makedirs(top_surface_stretch_png_dir, exist_ok=True)
+
+    coords_ref = mesh.coordinates()
+    top_indices = [i for i, c in enumerate(coords_ref) if near(c[1], length)]
+    top_indices.sort(key=lambda i: coords_ref[i, 0])
+
+    x1 = coords_ref[top_indices, 0]
+    lambda2 = F22_field.compute_vertex_values(mesh)[top_indices]
+
+    plt.figure(figsize=(7, 4))
+    plt.plot(x1, lambda2, "b-", linewidth=1.5)
+    plt.xlabel(r"$x_1$")
+    plt.ylabel(r"Stretch $\lambda_2 = F_{22}$")
+    plt.title(f"Top surface vertical stretch, $\\phi$ = {phi_app:.4f}")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    filename = f"top_surface_stretch_phi_{phi_app:.4f}.png"
+    plt.savefig(os.path.join(top_surface_stretch_png_dir, filename), dpi=300)
+    plt.close()
+
+def writeResults(phi_app):
     # Displacement vector
     u_Vis = project(u, W2)
     u_Vis.rename("disp", " ")
+
+    # Save displacement components separately
+    ux_Vis = project(u_Vis.sub(0), W)
+    ux_Vis.rename("u_x", " ")
+    uy_Vis = project(u_Vis.sub(1), W)
+    uy_Vis.rename("u_y", " ")
+
+    save_colored_vector_arrows(ux_Vis, uy_Vis, W, displacement_png_dir, "disp_colored_arrows",
+                    phi_app, max_arrows_per_direction=20, normalize_arrows=True)
 
     # Pressure
     p_Vis = project(p, W)
@@ -341,30 +341,121 @@ def writeResults(t):
     J_Vis = project(J, W)
     J_Vis.rename("J", " ")
 
+    # Stretch components
+    F22_Vis = project(F[1, 1], W)
+
+    plot_top_surface_stretch(phi_app, F22_Vis)
+
     # TOTAL CAUCHY STRESS
     T = Tmat*F.T/J
 
-    stress_limit = 3.0
-
-    T11_Vis = project_and_save_scalar(T[0,0]/stress_scale, W, "T11_total_over_G0", t, total_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T22_Vis = project_and_save_scalar(T[1,1]/stress_scale, W, "T22_total_over_G0", t, total_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T12_Vis = project_and_save_scalar(T[0,1]/stress_scale, W, "T12_total_over_G0", t, total_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
+    T11_Vis = project_and_save_scalar(T[0,0], W, "T11_total", phi_app, total_stress_png_dir)
+    T22_Vis = project_and_save_scalar(T[1,1], W, "T22_total", phi_app, total_stress_png_dir)
+    T12_Vis = project_and_save_scalar(T[0,1], W, "T12_total", phi_app, total_stress_png_dir)
 
     # MAXWELL CAUCHY STRESS
-    T11_Maxw_Vis = project_and_save_scalar(T_maxw[0,0]/stress_scale, W, "T11_maxw_over_G0", t, maxw_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T22_Maxw_Vis = project_and_save_scalar(T_maxw[1,1]/stress_scale, W, "T22_maxw_over_G0", t, maxw_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T12_Maxw_Vis = project_and_save_scalar(T_maxw[0,1]/stress_scale, W, "T12_maxw_over_G0", t, maxw_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
+    T11_Maxw_Vis = project_and_save_scalar(T_maxw[0,0], W, "T11_maxw", phi_app, maxw_stress_png_dir)
+    T22_Maxw_Vis = project_and_save_scalar(T_maxw[1,1], W, "T22_maxw", phi_app, maxw_stress_png_dir)
+    T12_Maxw_Vis = project_and_save_scalar(T_maxw[0,1], W, "T12_maxw", phi_app, maxw_stress_png_dir)
 
     # CAUCHY STRESS COMPONENTS
-    T11_mech_Vis = project_and_save_scalar( T_mech[0,0]/stress_scale, W, "T11_cauchy_over_G0", t, cauchy_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T22_mech_Vis = project_and_save_scalar( T_mech[1,1]/stress_scale, W, "T22_cauchy_over_G0", t, cauchy_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
-    T12_mech_Vis = project_and_save_scalar( T_mech[0,1]/stress_scale, W, "T12_cauchy_over_G0", t, cauchy_stress_png_dir, vmin_plot=-stress_limit, vmax_plot= stress_limit)
+    T11_mech_Vis = project_and_save_scalar(T_mech[0,0], W, "T11_mech", phi_app, cauchy_stress_png_dir)
+    T22_mech_Vis = project_and_save_scalar(T_mech[1,1], W, "T22_mech", phi_app, cauchy_stress_png_dir)
+    T12_mech_Vis = project_and_save_scalar(T_mech[0,1], W, "T12_mech", phi_app, cauchy_stress_png_dir)
 
     # ELECTRIC FIELD IN REFERENCE CONFIGURATION
     E_R = -pe_grad_scalar(phi)
-    E_limit = 1.5
 
-    save_colored_vector_arrows( E_R[0], E_R[1], W, Eref_png_dir, "E_R_colored_arrows_over_E0", t, vector_scale=E_scale, max_arrows_per_direction=20, normalize_arrows=True, vmin_plot=0.0, vmax_plot=E_limit)
+    save_colored_vector_arrows(E_R[0], E_R[1], W, Eref_png_dir, "E_R_colored_arrows",
+                    phi_app, max_arrows_per_direction=20, normalize_arrows=True)
+
+    E_Rx_Vis = project(E_R[0], W)
+    E_Ry_Vis = project(E_R[1], W)
+
+    return {
+        "u": u_Vis,
+        "p": p_Vis,
+        "phi": phi_Vis,
+        "J": J_Vis,
+        "F22": F22_Vis,
+        "T11_total": T11_Vis,
+        "T22_total": T22_Vis,
+        "T12_total": T12_Vis,
+        "T11_maxw": T11_Maxw_Vis,
+        "T22_maxw": T22_Maxw_Vis,
+        "T12_maxw": T12_Maxw_Vis,
+        "T11_mech": T11_mech_Vis,
+        "T22_mech": T22_mech_Vis,
+        "T12_mech": T12_mech_Vis,
+        "E_R_x": E_Rx_Vis,
+        "E_R_y": E_Ry_Vis,
+    }
+
+def save_center_node_field_values_separate_files(phi_app):
+    os.makedirs(center_node_values_dir, exist_ok=True)
+
+    hx = length/N
+    hy = length/N
+
+    # Total Cauchy stress
+    T = Tmat*F.T/J
+
+    # Reference electric field
+    E_R = -pe_grad_scalar(phi)
+
+    # Project all scalar fields that we want to export
+    fields = {
+        "u_x": project(u[0], W),
+        "u_y": project(u[1], W),
+
+        "p": project(p, W),
+        "phi": project(phi, W),
+        "J": project(J, W),
+
+        "T11_total": project(T[0,0], W),
+        "T22_total": project(T[1,1], W),
+        "T12_total": project(T[0,1], W),
+
+        "T11_mech": project(T_mech[0,0], W),
+        "T22_mech": project(T_mech[1,1], W),
+        "T12_mech": project(T_mech[0,1], W),
+
+        "T11_maxw": project(T_maxw[0,0], W),
+        "T22_maxw": project(T_maxw[1,1], W),
+        "T12_maxw": project(T_maxw[0,1], W),
+
+        "E_R1": project(E_R[0], W),
+        "E_R2": project(E_R[1], W),
+    }
+
+    # Center-node coordinates of the crossed mesh rectangles
+    center_coords = []
+    for j in range(N):
+        for i in range(N):
+            center_coords.append(((i + 0.5) * hx, (j + 0.5) * hy))
+
+    # Save one file for each field
+    for field_name, field_fun in fields.items():
+        rows = []
+        for x_c, y_c in center_coords:
+            value = field_fun(Point(x_c, y_c))
+            rows.append([x_c, y_c, value])
+        rows = np.array(rows)
+
+        filename = f"{field_name}_center_nodes_phi_{phi_app:.4f}.txt"
+        output_path = os.path.join(center_node_values_dir, filename)
+
+        np.savetxt(
+            output_path,
+            rows,
+            header="x y value",
+            comments="",
+            fmt="%.10e %.10e %.10e",
+        )
+
+    print("Saved separate center-node field files to:")
+    print(os.path.abspath(center_node_values_dir))
+
 
 from datetime import datetime
 
@@ -374,15 +465,12 @@ print("------------------------------------")
 # Store start time
 startTime = datetime.now()
 
-# Give the step a descriptive name
-step = "Actuate"
-
 # Boundary conditions
 bcs_0 = DirichletBC(ME.sub(0).sub(0), 0, facets, 1)  # u1 fix - Left
 bcs_1 = DirichletBC(ME.sub(0).sub(1), 0, facets, 2)  # u2 fix - Bottom
 #
 bcs_2 = DirichletBC(ME.sub(2), 0, facets, 2)  # phi ground - Bottom
-bcs_3 = DirichletBC(ME.sub(2), phiRamp, facets, 4)  # phi ramp - Top
+bcs_3 = DirichletBC(ME.sub(2), phiTop, facets, 4)  # fixed phi - Top
 
 # BC set
 bcs = [bcs_0, bcs_1, bcs_2, bcs_3]
@@ -403,100 +491,42 @@ prm['newton_solver']['maximum_iterations']   = 125
 prm['newton_solver']['relaxation_parameter'] = 0.5
 prm['newton_solver']['error_on_nonconvergence'] = True
 
-# Initalize output array for tip displacement
-timeHist0 = []
-timeHist1 = []
-timeHistTime = []
-#Iinitialize a counter for reporting data
-ii=0
+try:
+    (iterations, converged) = solver.solve()
+except RuntimeError as e:
+    print("Solver failed:", e)
+    converged = False
+    iterations = 0
 
-# Time-stepping solution procedure loop
-while t <= Ttot :
-    t += float(dk)
-    ii += 1
-    phiRamp.t = t
-
-    try:
-        (iter, converged) = solver.solve()
-    except RuntimeError as e:
-        print("Solver failed:", e)
-        break
-
-    if not converged:
-        print("-------------------------------------------")
-        print(f"Newton did not converge at increment {ii}, t = {t:.6f}")
-        print(f"Iterations used: {iter}")
-        print("Stopping before writing corrupted output.")
-        print("-------------------------------------------")
-        break
-
+if not converged:
+    print("-------------------------------------------")
+    print("Newton did not converge.")
+    print(f"Iterations used: {iterations}")
+    print("Stopping before writing output.")
+    print("-------------------------------------------")
+else:
     w_array = w.vector().get_local()
     if not np.all(np.isfinite(w_array)):
         print("-------------------------------------------")
-        print(f"NaN or Inf detected in solution at increment {ii}, t = {t:.6f}")
+        print("NaN or Inf detected in solution.")
         print("Stopping before writing output.")
         print("-------------------------------------------")
-        break
+    else:
+        field_dict = writeResults(phi_app)
+        save_center_node_field_values_separate_files(phi_app)
 
-    writeResults(t)
+        uy_top = w.sub(0).sub(1)(length/2, length)
+        stretch = uy_top/length + 1.0
+        current_area = assemble(J*dx)
 
-    w_old.vector()[:] = w.vector()
-
-    timeHistTime.append(t)
-    timeHist0.append(w.sub(0).sub(1)(length, length))
-    timeHist1.append(w.sub(2)(length, length))
-
-    # print progress of calculation
-    if ii%10 == 0:
-        now = datetime.now()
-        current_time = now.strftime("%H:%M:%S")
-        print("Step: {} |   Increment: {} | Iterations: {}".format(step, ii, iter))
-        print("Simulation Time: {} s | dt: {} s".format(round(t,2), round(dt, 3)))
-        print()
-
+        print("-------------------------------------------")
+        print(f"Applied potential (amplitude): {phi_app:.6f}")
+        print(f"Vertical stretch at top midpoint: {stretch:.6f}")
+        print(f"Current area: {current_area:.6f}")
+        print(f"Newton iterations: {iterations}")
+        print("-------------------------------------------")
 
 # Report elapsed real time for whole analysis
 endTime = datetime.now()
 elapseTime = endTime - startTime
-print("-------------------------------------------")
-print("Elapsed real time:  {}".format(elapseTime))
-print("-------------------------------------------")
-
-# set plot font to size 14
-font = {'size'   : 14}
-plt.rc('font', **font)
-
-# Get array of default plot colors
-prop_cycle = plt.rcParams['axes.prop_cycle']
-colors = prop_cycle.by_key()['color']
-
-# Plot the normalized dimensionless quantity for $\phi$ used in Wang et al. 2016
-# versus stretch in the vertical direction.
-timeHist0 = np.array(timeHist0)
-timeHist1 = np.array(timeHist1)
-timeHistTime = np.array(timeHistTime)
-
-normVolts = timeHist1/(length * np.sqrt(float(Geq_0)/float(vareps)))
-stretch = timeHist0/length + 1.0
-#
-plt.plot(normVolts, stretch, c=colors[0], linewidth=1.0, marker='.')
-# plt.scatter(normVolts[ii-1], stretch[ii-1], c='k', marker='x', s=100)
-plt.grid(linestyle="--", linewidth=0.5, color='b')
-ax = plt.gca()
-#
-ax.set_ylabel(r'$\lambda$')
-ax.set_ylim([0.2,1.1])
-ax.set_yticks([0.0, 0.2, 0.4, 0.6, 0.8, 1.0])
-#
-ax.set_xlabel(r'$(\phi/\ell_0)/\sqrt{G_0/\varepsilon} $')
-ax.set_xlim([0,1.3])
-#
-from matplotlib.ticker import AutoMinorLocator,FormatStrFormatter
-ax.xaxis.set_minor_locator(AutoMinorLocator())
-ax.yaxis.set_minor_locator(AutoMinorLocator())
-plt.show()
-
-fig = plt.gcf()
-fig.set_size_inches(6,4)
-plt.tight_layout()
-plt.show()
+print("Elapsed real time: {}".format(elapseTime))
