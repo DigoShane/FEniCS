@@ -44,7 +44,7 @@ rect = gmsh.model.occ.addRectangle(0, 0, 0, L, Ht, tag=1)
 crack = gmsh.model.occ.addRectangle(0, Ht/2 - eps_geom, 0, a, 2*eps_geom, tag=2)
 
 gmsh.model.occ.cut([(2, rect)], [(2, crack)], removeObject=True, removeTool=True)
-gmsh.model.occ.syncshronize()
+gmsh.model.occ.synchronize()
 
 
 #mesh size control
@@ -99,7 +99,7 @@ d_old = Function(Vd, name="Damage_old")   # previous iterate (stagger convergenc
 E, nu = 200, 0.2
 lmbda  = Constant(E * nu / ((1 + nu) * (1 - 2 * nu)))
 mu     = Constant(E / (2 * (1 + nu)))
-kappa  = Constant(lmbda + 2.0/3.0 * mu)   # bulk modulus
+kappa  = Constant(lmbda + 2.0/2.0 * mu)   # bulk modulus
 
 kres  = Constant(1e-6)          # residual stiffness
 Gc    = Constant(2.7)           # critical energy release rate

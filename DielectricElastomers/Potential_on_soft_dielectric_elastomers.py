@@ -59,7 +59,7 @@ vareps   = vareps_0*vareps_r         #  permittivity of the material
 phi_app = float(input("Enter the applied potential on the top electrode: "))
 
 # Fixed spatial distribution of potential on the top boundary
-phiTop = Expression("phi_app*sin(pi*x[0]/L)",
+phiTop = Expression("phi_app*sin(2*pi*x[0]/L)",
                     phi_app=phi_app, L=length, pi=np.pi, degree=3)
 
 # Define function space, both vectorial and scalar
@@ -89,7 +89,7 @@ W2 = FunctionSpace(mesh, U2)  # Vector space
 W  = FunctionSpace(mesh, P1)   # Scalar space
 
 
-# Output Folder Setup:
+## Output Folder Setup:
 base_png_dir = "png_results"
 
 total_stress_png_dir = os.path.join(base_png_dir, "total_cauchy_stress")
@@ -98,13 +98,14 @@ cauchy_stress_png_dir = os.path.join(base_png_dir, "cauchy_stress")
 Eref_png_dir         = os.path.join(base_png_dir, "electric_field_reference")
 top_surface_stretch_png_dir = os.path.join(base_png_dir, "top_surface_stretch")
 
-center_node_values_dir = os.path.join(base_png_dir, "center_node_values")
-
 displacement_png_dir = os.path.join(base_png_dir, "displacement")
+
+center_node_values_dir = os.path.join(base_png_dir, "center_node_values")
+corner_stress_png_dir = os.path.join(base_png_dir, "corner_total_cauchy_stress")
 
 all_png_dirs = [ total_stress_png_dir, maxw_stress_png_dir, 
                  cauchy_stress_png_dir, Eref_png_dir,
-                 top_surface_stretch_png_dir,
+                 top_surface_stretch_png_dir, corner_stress_png_dir,
                  displacement_png_dir, center_node_values_dir]
 
 # Clear old PNG results only
@@ -127,7 +128,6 @@ def pe_grad_vector(u):
                   [0, 0, 0]])
 
 # Gradient of scalar field y
-# (just need an extra zero for dimensions to work out)
 def pe_grad_scalar(y):
     grad_y = grad(y)
     return as_vector([grad_y[0], grad_y[1], 0.])
@@ -219,6 +219,10 @@ Res  =  Res_0 + Res_1 + Res_2
 # Automatic differentiation tangent:
 a = derivative(Res, w, dw)
 
+################################################################################
+#                     HELPER FUNCTIONS                                         #
+################################################################################
+# Related to image generation
 def save_scalar_png(scalar_function, folder, name, phi_app):
     os.makedirs(folder, exist_ok=True)
 
@@ -352,6 +356,8 @@ def writeResults(phi_app):
     T11_Vis = project_and_save_scalar(T[0,0], W, "T11_total", phi_app, total_stress_png_dir)
     T22_Vis = project_and_save_scalar(T[1,1], W, "T22_total", phi_app, total_stress_png_dir)
     T12_Vis = project_and_save_scalar(T[0,1], W, "T12_total", phi_app, total_stress_png_dir)
+    # TOTAL CAUCHY STRESS IN TOP-CORNER WINDOWS
+    save_top_corner_total_stress_windows( phi_app, T11_Vis, T22_Vis, T12_Vis, window_size=0.1)
 
     # MAXWELL CAUCHY STRESS
     T11_Maxw_Vis = project_and_save_scalar(T_maxw[0,0], W, "T11_maxw", phi_app, maxw_stress_png_dir)
@@ -456,6 +462,135 @@ def save_center_node_field_values_separate_files(phi_app):
     print("Saved separate center-node field files to:")
     print(os.path.abspath(center_node_values_dir))
 
+# Plotting stress at the corners.
+def save_scalar_png_window(scalar_function, folder, name, phi_app, xmin, xmax, ymin, ymax, window_label):
+    """
+    Save scalar field only in a rectangular window.
+        xmin <= x <= xmax
+        ymin <= y <= ymax
+    """
+
+    os.makedirs(folder, exist_ok=True)
+
+    coords = mesh.coordinates()
+    cells = mesh.cells()
+    values = scalar_function.compute_vertex_values(mesh)
+
+    # Select triangles whose centroids lie inside the window
+    selected_cells = []
+
+    for cell in cells:
+        cell_coords = coords[cell]
+
+        xc = np.mean(cell_coords[:, 0])
+        yc = np.mean(cell_coords[:, 1])
+
+        if (xmin <= xc <= xmax) and (ymin <= yc <= ymax):
+            selected_cells.append(cell)
+
+    selected_cells = np.array(selected_cells)
+
+    if selected_cells.shape[0] == 0:
+        print(f"No cells found for {name} in {window_label} window.")
+        return
+
+    # Local min/max using vertices appearing in selected cells
+    local_vertex_ids = np.unique(selected_cells.flatten())
+    local_values = values[local_vertex_ids]
+
+    local_min = np.min(local_values)
+    local_max = np.max(local_values)
+
+    plt.figure(figsize=(5, 4))
+    p_plot = plt.tripcolor( coords[:, 0], coords[:, 1], values, triangles=selected_cells, shading="gouraud")
+    plt.colorbar(p_plot)
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.axis("equal")
+    plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax)
+    plt.title( f"{name}, {window_label}\n"
+               f"$\\phi$ = {phi_app:.4f}, "
+               f"min = {local_min:.3e}, max = {local_max:.3e}")
+    plt.tight_layout()
+    filename = f"{name}_{window_label}_phi_{phi_app:.4f}.png"
+    filepath = os.path.join(folder, filename)
+    plt.savefig(filepath, dpi=300)
+    plt.close()
+
+
+def plot_bottom_boundary_er_tangential(phi_app, n_samples=101):
+    os.makedirs(Eref_png_dir, exist_ok=True)
+
+    E_R = -pe_grad_scalar(phi)
+    E_tangent = -E_R[0]
+    E_tangent_fun = project(E_tangent, W)
+
+    x1 = np.linspace(0.0, length, n_samples)
+    E_tangent_vals = np.array([E_tangent_fun(Point(x, 0.0)) for x in x1])
+
+    data_path = os.path.join( Eref_png_dir, f"E_R_tangential_bottom_phi_{phi_app:.4f}.txt")
+    np.savetxt(data_path, np.column_stack([x1, E_tangent_vals]), header="x1 E_R_tangential", comments="", fmt="%.10e %.10e")
+    plt.figure(figsize=(7, 4))
+    plt.plot(x1, E_tangent_vals, color="tab:blue", marker=".", linewidth=1.5, markersize=4)
+    plt.axhline(0.0, color="tab:gray", linestyle="--", linewidth=1.0)
+    plt.xlabel(r"$x_1$")
+    plt.ylabel(r"Tangential $E_R$ component")
+    plt.title(r"Tangential $E_R$ along bottom boundary ($x_2 = 0$)")
+    plt.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
+    plt.tight_layout()
+    plot_path = os.path.join(Eref_png_dir, f"E_R_tangential_bottom_phi_{phi_app:.4f}.png")
+    plt.savefig(plot_path, dpi=300)
+    plt.close()
+
+    max_abs = np.max(np.abs(E_tangent_vals))
+    print("-------------------------------------------")
+    print("Bottom boundary check (tangential E_R on x2 = 0):")
+    print(f"  Max |tangential E_R| = {max_abs:.6e}  (expected ~ 0)")
+    print(f"  Data saved to: {os.path.abspath(data_path)}")
+    print(f"  Plot saved to: {os.path.abspath(plot_path)}")
+    print("-------------------------------------------")
+
+#Saving fn for above
+def save_top_corner_total_stress_windows(phi_app, T11_fun, T22_fun, T12_fun, window_size=0.1):
+    # Top-left corner window
+    left_xmin = 0.0
+    left_xmax = window_size
+    left_ymin = length - window_size
+    left_ymax = length
+
+    # Top-right corner window
+    right_xmin = length - window_size
+    right_xmax = length
+    right_ymin = length - window_size
+    right_ymax = length
+
+    stress_fields = { "T11_total": T11_fun, "T22_total": T22_fun, "T12_total": T12_fun}
+
+    for stress_name, stress_fun in stress_fields.items():
+        save_scalar_png_window( stress_fun, corner_stress_png_dir, stress_name, phi_app, left_xmin, left_xmax, left_ymin, left_ymax, "top_left")
+        save_scalar_png_window( stress_fun, corner_stress_png_dir, stress_name, phi_app, right_xmin, right_xmax, right_ymin, right_ymax, "top_right")
+
+    # Lower-right and lower right corner of the top-left window
+    pt_left = Point(left_xmax, left_ymin)
+    pt_right = Point(right_xmin, right_ymin)
+
+    print("-------------------------------------------")
+    print("Total Cauchy stress components at selected corner-window points")
+    print(f"Applied potential amplitude phi = {phi_app:.6f}")
+    print("-------------------------------------------")
+    print( "pt_left: lower-right point of top-left window "
+            f"(x = {left_xmax:.6f}, y = {left_ymin:.6f})" )
+    print(f"  T11_total: {T11_fun(pt_left):.10e}")
+    print(f"  T22_total: {T22_fun(pt_left):.10e}")
+    print(f"  T12_total: {T12_fun(pt_left):.10e}")
+    print("-------------------------------------------")
+    print( "pt_right: lower-left point of top-right window "
+          f"(x = {right_xmin:.6f}, y = {right_ymin:.6f})")
+    print(f"  T11_total: {T11_fun(pt_right):.10e}")
+    print(f"  T22_total: {T22_fun(pt_right):.10e}")
+    print(f"  T12_total: {T12_fun(pt_right):.10e}")
+    print("-------------------------------------------")
 
 from datetime import datetime
 
@@ -491,6 +626,14 @@ prm['newton_solver']['maximum_iterations']   = 125
 prm['newton_solver']['relaxation_parameter'] = 0.5
 prm['newton_solver']['error_on_nonconvergence'] = True
 
+use_restart = input("Use previous saved solution as initial guess? (y/n): ")
+
+if use_restart=='y':
+    HDF5File(mesh.mpi_comm(), "restart_solution.h5", "r").read(w, "/w")
+    for bc in bcs:
+        bc.apply(w.vector())
+    print("Loaded restart solution from restart_solution.h5")
+
 try:
     (iterations, converged) = solver.solve()
 except RuntimeError as e:
@@ -519,12 +662,17 @@ else:
         stretch = uy_top/length + 1.0
         current_area = assemble(J*dx)
 
+        HDF5File(mesh.mpi_comm(), "restart_solution.h5", "w").write(w, "/w")
+
         print("-------------------------------------------")
         print(f"Applied potential (amplitude): {phi_app:.6f}")
         print(f"Vertical stretch at top midpoint: {stretch:.6f}")
         print(f"Current area: {current_area:.6f}")
         print(f"Newton iterations: {iterations}")
+        print("Saved restart solution to restart_solution.h5")
         print("-------------------------------------------")
+
+        plot_bottom_boundary_er_tangential(phi_app)
 
 # Report elapsed real time for whole analysis
 endTime = datetime.now()

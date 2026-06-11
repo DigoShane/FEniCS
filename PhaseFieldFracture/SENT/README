@@ -1,9 +1,0 @@
-This is the Single Edge Notch Tension problem.
-
-When i ran with mesh size lc= 0.004, the o/p was:
-   Maximum force = 28.573739771657564
-   Max |sigma_xx| at tip = 16.61960165100983
-   Max |sigma_yy| at tip = 48.439633478704806
-   Max |sigma_xy| at tip = 0.07279221340653905
-   Max |von Mises| at tip = 42.61925065859502
-   
