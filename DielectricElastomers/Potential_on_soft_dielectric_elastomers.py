@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 
 import os
 import shutil
+import sys
 
 parameters["form_compiler"]["representation"] = "uflacs"
 parameters["form_compiler"]["quadrature_degree"] = 4
@@ -14,6 +15,9 @@ length = 1.
 
 N = input("Enter the number of elements in the x,y-direction: ")
 N = int(N)
+
+# Sample points: 4 corners and center (reference configuration)
+sample_points = np.array([[0.0, 0.0],[length, 0.0],[0.0, length],[length, length],[0.5*length, 0.5*length]])
 
 #Mesh
 mesh = RectangleMesh(Point(0.,0.),Point(length,length), N, N, "crossed")
@@ -251,7 +255,7 @@ def project_and_save_scalar(expr, W, name, phi_app, folder):
     return field
 
 def save_colored_vector_arrows(expr_x, expr_y, W, folder, name, phi_app,
-                            max_arrows_per_direction=20, normalize_arrows=True):
+                            max_arrows_per_direction=50, normalize_arrows=True):
     os.makedirs(folder, exist_ok=True)
 
     Ex_fun = project(expr_x, W)
@@ -331,7 +335,7 @@ def writeResults(phi_app):
     uy_Vis.rename("u_y", " ")
 
     save_colored_vector_arrows(ux_Vis, uy_Vis, W, displacement_png_dir, "disp_colored_arrows",
-                    phi_app, max_arrows_per_direction=20, normalize_arrows=True)
+                    phi_app, max_arrows_per_direction=50, normalize_arrows=True)
 
     # Pressure
     p_Vis = project(p, W)
@@ -356,8 +360,18 @@ def writeResults(phi_app):
     T11_Vis = project_and_save_scalar(T[0,0], W, "T11_total", phi_app, total_stress_png_dir)
     T22_Vis = project_and_save_scalar(T[1,1], W, "T22_total", phi_app, total_stress_png_dir)
     T12_Vis = project_and_save_scalar(T[0,1], W, "T12_total", phi_app, total_stress_png_dir)
+
+    print("-------------------------------------------")
+    print(f"Total Cauchy stress at sample points (phi = {phi_app:.6f})")
+    for x_pt, y_pt in sample_points:
+        pt = Point(x_pt, y_pt)
+        print(f"  (x = {x_pt:.6f}, y = {y_pt:.6f}): "
+              f"T11 = {T11_Vis(pt):.10e}, T22 = {T22_Vis(pt):.10e}, T12 = {T12_Vis(pt):.10e}")
+    print("-------------------------------------------")
+
+
     # TOTAL CAUCHY STRESS IN TOP-CORNER WINDOWS
-    save_top_corner_total_stress_windows( phi_app, T11_Vis, T22_Vis, T12_Vis, window_size=0.1)
+    save_top_corner_total_stress_windows( phi_app, T11_Vis, T22_Vis, T12_Vis, window_size=0.05)
 
     # MAXWELL CAUCHY STRESS
     T11_Maxw_Vis = project_and_save_scalar(T_maxw[0,0], W, "T11_maxw", phi_app, maxw_stress_png_dir)
@@ -369,14 +383,20 @@ def writeResults(phi_app):
     T22_mech_Vis = project_and_save_scalar(T_mech[1,1], W, "T22_mech", phi_app, cauchy_stress_png_dir)
     T12_mech_Vis = project_and_save_scalar(T_mech[0,1], W, "T12_mech", phi_app, cauchy_stress_png_dir)
 
+    print_stress_component_extrema(
+        {"T11_total": T11_Vis, "T22_total": T22_Vis, "T12_total": T12_Vis},
+        "Total Cauchy stress")
+
     # ELECTRIC FIELD IN REFERENCE CONFIGURATION
     E_R = -pe_grad_scalar(phi)
 
     save_colored_vector_arrows(E_R[0], E_R[1], W, Eref_png_dir, "E_R_colored_arrows",
-                    phi_app, max_arrows_per_direction=20, normalize_arrows=True)
+                    phi_app, max_arrows_per_direction=50, normalize_arrows=True)
 
     E_Rx_Vis = project(E_R[0], W)
     E_Ry_Vis = project(E_R[1], W)
+    E_R_mag_Vis = project(sqrt(dot(E_R, E_R)), W)
+    print_scalar_field_extrema(E_R_mag_Vis, "|E_R|", "Reference electric field magnitude")
 
     return {
         "u": u_Vis,
@@ -395,7 +415,32 @@ def writeResults(phi_app):
         "T12_mech": T12_mech_Vis,
         "E_R_x": E_Rx_Vis,
         "E_R_y": E_Ry_Vis,
+        "E_R_mag": E_R_mag_Vis,
     }
+
+def print_scalar_field_extrema(field_fun, name, label):
+    coords = mesh.coordinates()
+    values = field_fun.compute_vertex_values(mesh)
+    i_min = int(np.argmin(values))
+    i_max = int(np.argmax(values))
+    print("-------------------------------------------")
+    print(f"{label}: min/max and locations")
+    print(f"  {name}: min = {values[i_min]:.10e} at (x = {coords[i_min, 0]:.6f}, y = {coords[i_min, 1]:.6f})")
+    print(f"         max = {values[i_max]:.10e} at (x = {coords[i_max, 0]:.6f}, y = {coords[i_max, 1]:.6f})")
+    print("-------------------------------------------")
+
+#helper function to print the components of stress.
+def print_stress_component_extrema(stress_fields, label):
+    coords = mesh.coordinates()
+    print("-------------------------------------------")
+    print(f"{label}: min/max and locations")
+    for name, field_fun in stress_fields.items():
+        values = field_fun.compute_vertex_values(mesh)
+        i_min = int(np.argmin(values))
+        i_max = int(np.argmax(values))
+        print(f"  {name}: min = {values[i_min]:.10e} at (x = {coords[i_min, 0]:.6f}, y = {coords[i_min, 1]:.6f})")
+        print(f"         max = {values[i_max]:.10e} at (x = {coords[i_max, 0]:.6f}, y = {coords[i_max, 1]:.6f})")
+    print("-------------------------------------------")
 
 def save_center_node_field_values_separate_files(phi_app):
     os.makedirs(center_node_values_dir, exist_ok=True)
@@ -552,7 +597,7 @@ def plot_bottom_boundary_er_tangential(phi_app, n_samples=101):
     print("-------------------------------------------")
 
 #Saving fn for above
-def save_top_corner_total_stress_windows(phi_app, T11_fun, T22_fun, T12_fun, window_size=0.1):
+def save_top_corner_total_stress_windows(phi_app, T11_fun, T22_fun, T12_fun, window_size=0.05):
     # Top-left corner window
     left_xmin = 0.0
     left_xmax = window_size
