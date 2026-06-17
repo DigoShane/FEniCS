@@ -78,7 +78,7 @@ def save_displacement_quiver(mesh, subdomains, v_fun, Eps_np, filename,
         mp = cell.midpoint()
         x = np.array([mp.x(), mp.y()])
         v_val = np.array(v_fun(mp))
-        u_val = v_val
+        u_val = v_val # + Eps_np.dot(x)
         X.append(x)
         U.append(u_val)
 
@@ -90,11 +90,18 @@ def save_displacement_quiver(mesh, subdomains, v_fun, Eps_np, filename,
         X = X[ids]
         U = U[ids]
 
-    # Plot subdomains as background
+    amp = np.sqrt(U[:, 0]**2 + U[:, 1]**2)
+    amp_safe = amp.copy()
+    amp_safe[amp_safe == 0.0] = 1.0
+
+    U_dir = np.zeros_like(U)
+    U_dir[:, 0] = U[:, 0]/amp_safe
+    U_dir[:, 1] = U[:, 1]/amp_safe
+
     plt.figure(figsize=(8, 5))
     plot(subdomains)
-    plt.quiver( X[:, 0], X[:, 1], scale_factor*U[:, 0], scale_factor*U[:, 1], angles="xy", 
-                scale_units="xy", scale=0.25, width=0.003)
+    plt.quiver( X[:, 0], X[:, 1], scale_factor*U_dir[:, 0], scale_factor*U_dir[:, 1], amp, angles="xy", 
+                scale_units="xy", scale=1, width=0.003, cmap='coolwarm')
     plt.axis("equal")
     plt.title("Displacement quiver over material subdomains")
     plt.xlabel("x")
@@ -137,11 +144,11 @@ for (j, case) in enumerate(["Exx", "Eyy", "Exy"]):
     v_fun, lamb_fun = w.split(deepcopy=True)
     #vector plot
     save_displacement_quiver( mesh, subdomains, v_fun, Eps_np = macro_strain(j), 
-    filename="quiver_displacement_{}.png".format(case), scale_factor=0.5, max_arrows=600)
+    filename="quiver_displacement_{}.png".format(case), scale_factor=0.05, max_arrows=600)
     #quiver
     y = SpatialCoordinate(mesh)
     plt.figure()
-    p = plot(0.5*(dot(Eps, y)+v), mode="displacement", title=case)
+    p = plot(1*(dot(Eps, y)+v), mode="displacement", title=case)
     plt.savefig("displacement_{}.png".format(case), dpi=300)
     Sigma = np.zeros((3,))
     for k in range(3):  
@@ -150,9 +157,10 @@ for (j, case) in enumerate(["Exx", "Eyy", "Exy"]):
 
 print(np.array_str(Chom, precision=2))
 
-## plotting deformed unit cell with total displacement u = Eps*y + v
-#y = SpatialCoordinate(mesh)
-#plt.figure()
-#p = plot(0.5*(dot(Eps, y)+v), mode="displacement", title=case)
-#plt.savefig("displacement.png", dpi=300)
+# plotting deformed unit cell with total displacement u = Eps*y + v
+y = SpatialCoordinate(mesh)
+plt.figure()
+u_mag = sqrt(dot(dot(Eps, y) + v, dot(Eps, y) + v))
+p = plot(u_mag, title=case)
+plt.savefig("displacement.png", dpi=300)
 plt.close()
