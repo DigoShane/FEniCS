@@ -63,7 +63,7 @@ vareps   = vareps_0*vareps_r         #  permittivity of the material
 phi_app = float(input("Enter the applied potential on the top electrode: "))
 
 # Fixed spatial distribution of potential on the top boundary
-phiTop = Expression("phi_app*sin(2*pi*x[0]/L)",
+phiTop = Expression("phi_app*cos(pi*x[0]/L)",
                     phi_app=phi_app, L=length, pi=np.pi, degree=3)
 
 # Define function space, both vectorial and scalar
@@ -106,11 +106,13 @@ displacement_png_dir = os.path.join(base_png_dir, "displacement")
 
 center_node_values_dir = os.path.join(base_png_dir, "center_node_values")
 corner_stress_png_dir = os.path.join(base_png_dir, "corner_total_cauchy_stress")
+total_stress_depth_profiles_dir = os.path.join(base_png_dir, "total_stress_depth_profiles")
 
 all_png_dirs = [ total_stress_png_dir, maxw_stress_png_dir, 
                  cauchy_stress_png_dir, Eref_png_dir,
                  top_surface_stretch_png_dir, corner_stress_png_dir,
-                 displacement_png_dir, center_node_values_dir]
+                 displacement_png_dir, center_node_values_dir,
+                 total_stress_depth_profiles_dir]
 
 # Clear old PNG results only
 if os.path.exists(base_png_dir):
@@ -323,6 +325,60 @@ def plot_top_surface_stretch(phi_app, F22_field):
     plt.savefig(os.path.join(top_surface_stretch_png_dir, filename), dpi=300)
     plt.close()
 
+def plot_total_stress_depth_profiles(phi_app, T11_fun, T22_fun, T12_fun, n_samples=101):
+    os.makedirs(total_stress_depth_profiles_dir, exist_ok=True)
+
+    h = length / N
+    depth_specs = [ (0.0, "0"), (0.5 * h, "h/2"), (h, "h"), (1.5 * h, "3h/2"), (2.0 * h, "2h")]
+
+    x1 = np.linspace(0.0, length, n_samples)
+    stress_fields = { "T11_total": (T11_fun, r"$T_{11}$"), "T22_total": (T22_fun, r"$T_{22}$"),
+                      "T12_total": (T12_fun, r"$T_{12}$")}
+
+    for comp_name, (field_fun, ylabel) in stress_fields.items():
+        plt.figure(figsize=(7, 4))
+        data_rows = []
+
+        for depth, depth_label in depth_specs:
+            y_level = length - depth
+            if y_level < -1e-12:
+                print(f"Skipping depth {depth_label}: y = {y_level:.6f} is outside the domain.")
+                continue
+
+            vals = np.array([field_fun(Point(x, y_level)) for x in x1])
+            plt.plot(x1, vals, linewidth=1.5, label=rf"$d = {depth_label}$")
+            data_rows.append(np.column_stack([ np.full(n_samples, depth),
+                np.full(n_samples, y_level), x1, vals ]))
+
+        plt.xlabel(r"$x_1$")
+        plt.ylabel(ylabel)
+        plt.title(
+            f"Total Cauchy {comp_name} vs $x_1$ below top surface, $\\phi$ = {phi_app:.4f}"
+        )
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        plot_path = os.path.join(
+            total_stress_depth_profiles_dir,
+            f"{comp_name}_depth_profiles_phi_{phi_app:.4f}.png",
+        )
+        plt.savefig(plot_path, dpi=300)
+        plt.close()
+
+        if data_rows:
+            data_path = os.path.join(
+                total_stress_depth_profiles_dir,
+                f"{comp_name}_depth_profiles_phi_{phi_app:.4f}.txt",
+            )
+            np.savetxt(
+                data_path,
+                np.vstack(data_rows),
+                header="depth_from_top y x1 value",
+                comments="",
+                fmt="%.10e %.10e %.10e %.10e",
+            )
+
 def writeResults(phi_app):
     # Displacement vector
     u_Vis = project(u, W2)
@@ -361,6 +417,8 @@ def writeResults(phi_app):
     T22_Vis = project_and_save_scalar(T[1,1], W, "T22_total", phi_app, total_stress_png_dir)
     T12_Vis = project_and_save_scalar(T[0,1], W, "T12_total", phi_app, total_stress_png_dir)
 
+    plot_total_stress_depth_profiles(phi_app, T11_Vis, T22_Vis, T12_Vis)
+
     print("-------------------------------------------")
     print(f"Total Cauchy stress at sample points (phi = {phi_app:.6f})")
     for x_pt, y_pt in sample_points:
@@ -386,6 +444,12 @@ def writeResults(phi_app):
     print_stress_component_extrema(
         {"T11_total": T11_Vis, "T22_total": T22_Vis, "T12_total": T12_Vis},
         "Total Cauchy stress")
+    print_stress_component_extrema(
+        {"T11_maxw": T11_Maxw_Vis, "T22_maxw": T22_Maxw_Vis, "T12_maxw": T12_Maxw_Vis},
+        "Maxwell Cauchy stress")
+    print_stress_component_extrema(
+        {"T11_mech": T11_mech_Vis, "T22_mech": T22_mech_Vis, "T12_mech": T12_mech_Vis},
+        "Mechanical Cauchy stress")
 
     # ELECTRIC FIELD IN REFERENCE CONFIGURATION
     E_R = -pe_grad_scalar(phi)
@@ -450,6 +514,12 @@ def save_center_node_field_values_separate_files(phi_app):
 
     # Total Cauchy stress
     T = Tmat*F.T/J
+
+    volume = assemble(J * dx)
+    T11_avg = assemble(T[0, 0] * J * dx) / volume
+    T22_avg = assemble(T[1, 1] * J * dx) / volume
+    T12_avg = assemble(T[0, 1] * J * dx) / volume
+    print(f"Average Cauchy stress: T11 = {T11_avg:.6e}, T22 = {T22_avg:.6e}, T12 = {T12_avg:.6e}")
 
     # Reference electric field
     E_R = -pe_grad_scalar(phi)

@@ -55,7 +55,7 @@ class PeriodicBoundary(SubDomain): #inheritence from SubDomain class.
             y[1] = x[1] - self.a2[1]
 
 
-Em = 50e3
+Em = 40e3
 num = 0.2
 Er = 210e3
 nur = 0.3
@@ -155,12 +155,12 @@ for (j, case) in enumerate(["Exx", "Eyy", "Exy"]):
         Sigma[k] = assemble(sum([stress2Voigt(sigma(v, i, Eps))[k]*dx(i) for i in range(nphases)]))/vol
     Chom[j, :] = Sigma
 
-print(np.array_str(Chom, precision=2))
+print(np.array_str(Chom))
 
-# plotting deformed unit cell with total displacement u = Eps*y + v
-y = SpatialCoordinate(mesh)
-plt.figure()
-u_mag = sqrt(dot(dot(Eps, y) + v, dot(Eps, y) + v))
-p = plot(u_mag, title=case)
-plt.savefig("displacement.png", dpi=300)
+## plotting deformed unit cell with total displacement u = Eps*y + v
+#y = SpatialCoordinate(mesh)
+#plt.figure()
+#u_mag = sqrt(dot(dot(Eps, y) + v, dot(Eps, y) + v))
+#p = plot(u_mag, title=case)
+#plt.savefig("displacement.png", dpi=300)
 plt.close()
