@@ -100,8 +100,10 @@ def save_displacement_quiver(mesh, subdomains, v_fun, Eps_np, filename,
 
     plt.figure(figsize=(8, 5))
     plot(subdomains)
-    plt.quiver( X[:, 0], X[:, 1], scale_factor*U_dir[:, 0], scale_factor*U_dir[:, 1], amp, angles="xy", 
+    q = plt.quiver( X[:, 0], X[:, 1], scale_factor*U_dir[:, 0], scale_factor*U_dir[:, 1], amp, angles="xy", 
                 scale_units="xy", scale=1, width=0.003, cmap='coolwarm')
+    cbar = plt.colorbar(q)
+    cbar.set_label("|v|")
     plt.axis("equal")
     plt.title("Displacement quiver over material subdomains")
     plt.xlabel("x")

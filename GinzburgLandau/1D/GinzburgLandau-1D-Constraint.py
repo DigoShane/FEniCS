@@ -26,8 +26,8 @@ import matplotlib.pyplot as plt
 
 
 #Create mesh and define function space
-Lx=10
-mesh = fe.IntervalMesh(100,0,Lx)
+Lx=20
+mesh = fe.IntervalMesh(500, 0,Lx)
 x = SpatialCoordinate(mesh)
 VA = FiniteElement("CG", mesh.ufl_cell(), 2)
 Vu = FiniteElement("CG", mesh.ufl_cell(), 2)
@@ -56,12 +56,12 @@ bcs = [bc1, bc2, bc3];
 
 
 # Parameters
-kappa = Constant(1);
-Hin = input("External Magnetic field? ")
+kappa = Constant(0.5);
+Hin = float(1/np.sqrt(2)) # input("External Magnetic field? ")
 H = Constant(Hin);
-rlx_par_in = input("relaxation parameter? ")
+rlx_par_in = 0.5 # input("relaxation parameter? ")
 rlx_par = Constant(rlx_par_in);
-tol_abs_in = input("absolute tolerance? ")
+tol_abs_in = 1E-6 # input("absolute tolerance? ")
 tol_abs = Constant(tol_abs_in);
 Ae = H*x[0]
 
@@ -71,28 +71,28 @@ Ae = H*x[0]
 #-----------------------------------------------------------------------------------------------------------------
 #Aur = interpolate( Expression(("1","0.0", "1.5"), degree=2), V)#SC phase as initial cond.
 #Aur = interpolate( Expression(("H*x[0]","0", "0"), H=H, degree=2), V)#Normal phase as initial condiiton
-##Coexistence of phase as initial condition
-#ul = Expression('0', degree=2, domain=mesh)
-#Al = Expression('H*(0.5*Lx-x[0])', H=H, Lx=Lx, degree=2, domain=mesh)
-#ur = Expression('1', degree=2, domain=mesh)
-#Ar = Expression('0', degree=2, domain=mesh)
-#Aur = interpolate( Expression(('x[0] <= 0.5*Lx + DOLFIN_EPS ? Al : Ar', 'x[0]<=0.5*Lx+DOLFIN_EPS ? ul : ur', '11'), ul=ul, ur=ur, Al=Al, Ar=Ar, Lx=Lx, degree=2), V)
+#Coexistence of phase as initial condition
+ul = Expression('0', degree=2, domain=mesh)
+Al = Expression('H*(0.5*Lx-x[0])', H=H, Lx=Lx, degree=2, domain=mesh)
+ur = Expression('1', degree=2, domain=mesh)
+Ar = Expression('0', degree=2, domain=mesh)
+Aur = interpolate( Expression(('x[0] <= 0.5*Lx + DOLFIN_EPS ? Al : Ar', 'x[0]<= 0.5*Lx + DOLFIN_EPS ? ul : ur', '11'), ul=ul, ur=ur, Al=Al, Ar=Ar, Lx=Lx, degree=2), V)
 #For 1D Vortex Solution.
 #Aur = interpolate( Expression(("sqrt(2*tanh(x[0]+0.89)*tanh(x[0]+0.89)-1)","-sqrt(2)*sqrt(1-tanh(x[0]+0.89)*tanh(x[0]+0.89))","1"), degree=3), V)#1D vortex solution.
 #---------------------------------------------------------------------------------------------------------------
-#Reading input from a .xdmf file.
-Aur = Function(V)
-A = Function(Vcoord)
-u = Function(Vcoord)
-r = Function(RFnSp)
-data = np.loadtxt('Cr-1.txt')
-y0 = data
-r = interpolate(Constant(float(y0)),RFnSp)
-A_in =  XDMFFile("CA-1.xdmf")
-A_in.read_checkpoint(A,"A",0)
-u_in =  XDMFFile("Cu-1.xdmf")
-u_in.read_checkpoint(u,"u",0)
-assign(Aur,[A,u,r])
+##Reading input from a .xdmf file.
+#Aur = Function(V)
+#A = Function(Vcoord)
+#u = Function(Vcoord)
+#r = Function(RFnSp)
+#data = np.loadtxt('Cr-1.txt')
+#y0 = data
+#r = interpolate(Constant(float(y0)),RFnSp)
+#A_in =  XDMFFile("CA-1.xdmf")
+#A_in.read_checkpoint(A,"A",0)
+#u_in =  XDMFFile("Cu-1.xdmf")
+#u_in.read_checkpoint(u,"u",0)
+#assign(Aur,[A,u,r])
 
 (A, u, r) = split(Aur)
 
@@ -101,7 +101,11 @@ assign(Aur,[A,u,r])
 
 F = (-(1-u**2)*u*du + (1/kappa**2)*inner(grad(u), grad(du)) + A**2*u*du + 0.5*r*du + dr*(u-0.5) + u**2*A*dA + inner(grad(A), grad(dA)))*dx + H*dA*ds
 solve(F == 0, Aur, bcs,
-   solver_parameters={"newton_solver":{"convergence_criterion":"residual","relaxation_parameter":rlx_par,"relative_tolerance":0.001,"absolute_tolerance":tol_abs,"maximum_iterations":4000}})
+   solver_parameters={"newton_solver":{"convergence_criterion":"residual",
+                      "relaxation_parameter":rlx_par,
+                      "relative_tolerance":0.001,
+                      "absolute_tolerance":tol_abs,
+                      "maximum_iterations":10000}})
 
 A = Aur.sub(0, deepcopy=True)
 u = Aur.sub(1, deepcopy=True)
@@ -131,4 +135,3 @@ plt.show()
 plot(A)
 plt.title(r"$A(x)$ for domain [0,"+str(Lx)+"] for H= "+str(Hin)+", with rlx_par "+str(rlx_par_in)+" and abs_tol "+str(tol_abs_in),fontsize=26)
 plt.show()
-

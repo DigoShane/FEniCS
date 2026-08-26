@@ -1,231 +1,190 @@
-# Import FEnicS/dolfin
-import dolfinx
+"""
+3D Code for finite electro-elasticity with u-p formulation.
 
-# For numerical arrays
+Problem: Electro-elastic pull-in instability of a 3d VHB  block.
+
+- with basic units:
+    > Length: mm
+    >   Time:  s
+    >   Mass: kg
+    > Charge: nC
+  and derived units
+    > Pressure: kPa 
+    > Force: milliNewtons
+    > Electric potential: kV
+    
+Eric M. Stewart    and    Lallit Anand   
+(ericstew@mit.edu)        (anand@mit.edu)   
+
+ October 2023
+"""
+
+# Fenics-related packages
+from dolfin import *
+# Numerical array package
 import numpy as np
-
-# For MPI-based parallelization
-from mpi4py import MPI
-comm = MPI.COMM_WORLD
-rank = comm.Get_rank()
-
-# PETSc solvers
-from petsc4py import PETSc
-
-# specific functions from dolfinx modules
-from dolfinx import fem, mesh, io, plot, log
-from dolfinx.fem import (Constant, dirichletbc, Function, functionspace, Expression )
-from dolfinx.fem.petsc import NonlinearProblem
-from dolfinx.nls.petsc import NewtonSolver
-from dolfinx.io import VTXWriter, XDMFFile
-
-
-# specific functions from ufl modules
-import ufl
-from ufl import (TestFunctions, TrialFunction, Identity, grad, det, div, dev, inv, tr, sqrt, conditional ,\
-                 gt, dx, inner, derivative, dot, ln, split, exp, eq, cos, acos, ge, le, outer)
-
-# basix finite elements
-import basix
-from basix.ufl import element, mixed_element, quadrature_element
-
-# Matplotlib for plotting
+# Plotting packages
+from ufl import sinh
 import matplotlib.pyplot as plt
 plt.close('all')
-
-# For timing the code
+# Current time package
 from datetime import datetime
 
-# A 3-D cube
-length = 1.0 # mm
-domain = mesh.create_box(MPI.COMM_WORLD, [[0.0,0.0,0.0], [length,length,length]],\
-                         [1,1,1], mesh.CellType.tetrahedron)
-
-x = ufl.SpatialCoordinate(domain)
-
-# Identify the planar boundaries of the  box mesh
-#
-def xBot(x):
-    return np.isclose(x[0], 0)
-def xTop(x):
-    return np.isclose(x[0], length)
-def yBot(x):
-    return np.isclose(x[1], 0)
-def yTop(x):
-    return np.isclose(x[1], length)
-def zBot(x):
-    return np.isclose(x[2], 0)
-def zTop(x):
-    return np.isclose(x[2], length)
-    
-# Mark the sub-domains
-boundaries = [(1, xBot),(2,xTop),(3,yBot),(4,yTop),(5,zBot),(6,zTop)]
-
-# build collections of facets on each subdomain and mark them appropriately.
-facet_indices, facet_markers = [], [] # initalize empty collections of indices and markers.
-fdim = domain.topology.dim - 1 # geometric dimension of the facet (mesh dimension - 1)
-for (marker, locator) in boundaries:
-    facets = mesh.locate_entities(domain, fdim, locator) # an array of all the facets in a 
-                                                         # given subdomain ("locator")
-    facet_indices.append(facets)                         # add these facets to the collection.
-    facet_markers.append(np.full_like(facets, marker))   # mark them with the appropriate index.
-
-# Format the facet indices and markers as required for use in dolfinx.
-facet_indices = np.hstack(facet_indices).astype(np.int32)
-facet_markers = np.hstack(facet_markers).astype(np.int32)
-sorted_facets = np.argsort(facet_indices)
+# Set level of detail for log messages (integer)
 # 
-# Add these marked facets as "mesh tags" for later use in BCs.
-facet_tags = mesh.meshtags(domain, fdim, facet_indices[sorted_facets], facet_markers[sorted_facets])
+# Guide:
+# CRITICAL  = 50, // errors that may lead to data corruption
+# ERROR     = 40, // things that HAVE gone wrong
+# WARNING   = 30, // things that MAY go wrong later
+# INFO      = 20, // information of general interest (includes solver info)
+# PROGRESS  = 16, // what's happening (broadly)
+# TRACE     = 13, // what's happening (in detail)
+# DBG       = 10  // sundry
+#
+set_log_level(30)
 
-top_imap = domain.topology.index_map(2)      # index map of 2D entities in domain (facets)
-values = np.zeros(top_imap.size_global)      # an array of zeros of the same size as number of 2D entities
-values[facet_tags.indices]=facet_tags.values # populating the array with facet tag index numbers
-print(np.unique(facet_tags.values))          # printing the unique indices
+# The behavior of the form compiler FFC can be adjusted by prescribing
+# various parameters. Here, we want to use the UFLACS backend of FFC::
+# Optimization options for the form compiler
+parameters["form_compiler"]["cpp_optimize"] = True
+parameters["form_compiler"]["representation"] = "uflacs"
+parameters["form_compiler"]["cpp_optimize_flags"] = "-O3 -ffast-math -march=native"
+parameters["form_compiler"]["quadrature_degree"] = 4
 
-import pyvista
-pyvista.set_jupyter_backend('html')
-from dolfinx.plot import vtk_mesh
-pyvista.start_xvfb()
+"""
+Create mesh and identify the domain and its boundary
+"""
+# Bar dimensions
+#
+L_0  = 1 # mm  Length in x-direction
+W_0  = 1 # mm  Width  in y-direction
+H_0  = 1 # mm  Height in z-direction
+#
+length = 1 # mm
+#
+# Last three numbers below are the number of elements in the three directions
+N = int(input("Enter the discretization in each direction ->"))
+mesh = BoxMesh(Point(0, 0, 0), Point(L_0, W_0, H_0), N, N, N)
 
-# initialize a plotter
-plotter = pyvista.Plotter()
+# Extract initial mesh coords
+x = SpatialCoordinate(mesh)
 
-# Add the mesh.
-topology, cell_types, geometry = plot.vtk_mesh(domain, domain.topology.dim)
-grid = pyvista.UnstructuredGrid(topology, cell_types, geometry)
-plotter.add_mesh(grid, show_edges=True) 
+# Identify the boundary entities of mesh
+class face1(SubDomain):
+    def inside(self, x, on_boundary):
+        tol = 1E-3
+        return near(x[0], 0, tol) and on_boundary
+    
+class face2(SubDomain):
+    def inside(self, x, on_boundary):
+        tol = 1E-3
+        return near(x[1], 0, tol) and on_boundary
+    
+class face3(SubDomain):
+    def inside(self, x, on_boundary):
+        tol =1E-14
+        return near(x[2], 0, tol) and on_boundary
+    
+    
+class face4(SubDomain):
+    def inside(self, x, on_boundary):
+        tol = 1E-3
+        return near(x[0], L_0, tol) and on_boundary
+    
+class face5(SubDomain):
+    def inside(self, x, on_boundary):
+        tol = 1E-3
+        return near(x[1], W_0, tol) and on_boundary
+    
+class face6(SubDomain):
+    def inside(self, x, on_boundary):
+        tol = 1E-3
+        return near(x[2], H_0, tol) and on_boundary
+    
+# Mark boundary subdomains
+facets = MeshFunction("size_t", mesh, 2)
+facets.set_all(0)
+# First, mark all boundaries with common index
+DomainBoundary().mark(facets, 7) 
+# Next mark specific boundaries
+face1().mark(facets,  1)
+face2().mark(facets,  2)
+face3().mark(facets,  3)
+face4().mark(facets,  4)
+face5().mark(facets,  5)
+face6().mark(facets,  6)
 
-labels = dict(zlabel='Z', xlabel='X', ylabel='Y')
-plotter.add_axes(**labels)
+# Define the boundary integration measure "ds".
+ds = Measure('ds', domain=mesh, subdomain_data=facets)
 
-plotter.screenshot("results/cube_mesh.png")
-
-from IPython.display import Image
-Image(filename='results/cube_mesh.png') 
-
-# Define the boundary integration measure "ds" using the facet tags,
-# also specify the number of surface quadrature points.
-ds = ufl.Measure('ds', domain=domain, subdomain_data=facet_tags, metadata={'quadrature_degree':2})
-
-# Define the volume integration measure "dx" 
-# also specify the number of volume quadrature points.
-dx = ufl.Measure('dx', domain=domain, metadata={'quadrature_degree': 2})
-
-# Create facet to cell connectivity required to determine boundary facets.
-domain.topology.create_connectivity(domain.topology.dim, domain.topology.dim)
-domain.topology.create_connectivity(domain.topology.dim, domain.topology.dim-1)
-domain.topology.create_connectivity(domain.topology.dim-1, domain.topology.dim)
-
-#  Define facet normal
-n = ufl.FacetNormal(domain)
-
+'''''''''''''''''''''
+MATERIAL PARAMETERS
+'''''''''''''''''''''
 # Mechanical parameters
-Geq_0   = Constant(domain, 15.0)         # Shear modulus, kPa
-Kbulk = Constant(domain, PETSc.ScalarType(1.0e3*Geq_0))  # Bulk modulus, kPa
-I_m     = Constant(domain, 175.0)        # Gent locking paramter
-
+Geq_0   = 15         # Shear modulus, kPa
+Kbulk   = 1e3*Geq_0  # Bulk modulus, kPa
+I_m     = float(input("Enter the value of I_m -> "))        # Gent locking paramter
 # Electrostatic  parameters
-vareps_0 = Constant(domain, 8.85E-3)  #  permittivity of free space pF/mm
-vareps_r = Constant(domain, 5.0)        #  relative permittivity, dimensionless
-vareps   = vareps_r*vareps_0          #  permittivity of the material
+vareps_0 = Constant(8.85E-3)         #  permittivity of free space pF/mm
+vareps_r = Constant(5)             #  relative permittivity, dimensionless
+vareps   = vareps_r*vareps_0         #  permittivity of the material
 
-# start time (sec)
-t = 0.0
+# Simulation time control-related params
+t    = 0.0          # start time (s)
+rampRate = 0.1     # s^{-1}
+Ttot = 1.0/rampRate # total simulation time (s) 
+numSteps = int(input("Enter numsteps ->"))
+dt   = Constant(Ttot/numSteps)       # (fixed) step size
 
-# ramp rate (1/sec)
-rampRate = 1.0e-1
-
-# total simulation time (sec)
-Ttot = 1.0/rampRate
-
-# number of steps for this simulation
-numSteps = 100
-
-# time step size (sec)
-dt = Ttot/numSteps
-
-# Create a constant for the time step
-dk = Constant(domain, PETSc.ScalarType(dt))
-
-# Final normalized value of phi.  Normalization parameter for voltage: l*sqrt(Geq_0/vareps)
+# Normalization parameter for voltage: l*sqrt(Geq_0/vareps)
 #
-phiTot = float(length*np.sqrt(float(Geq_0)/float(vareps)))
+phiTot = float(length*np.sqrt(float(Geq_0)/float(vareps)))  # final normalized value of phi
 
-# Function to linearly ramp up displacement on boundary.
-def phiRamp(t):
-    phi = phiTot*t/Ttot
-    return phi
+# Boundary condition to ramp up electrostatic potential
+phiRamp = Expression(("phi_tot*t/Ttot"), 
+                     t = 0.0, phi_tot = phiTot, Ttot=Ttot, degree=1)
 
-U2 = element("Lagrange", domain.basix_cell(), 2, shape=(3,))  # For displacement
-P1 = element("Lagrange", domain.basix_cell(), 1)  # For pressure and electric potential
+'''''''''''''''''''''
+FEM SETUP
+'''''''''''''''''''''
+# Define function space, both vectorial and scalar
+U2 = VectorElement("Lagrange", mesh.ufl_cell(), 2) # For displacement
+P1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1) # For pressure and electric potential
 #
-TH = mixed_element([U2, P1, P1])     # Taylor-Hood style mixed element
-ME = functionspace(domain, TH)    # Total space for all DOFs
-#
-V1 = functionspace(domain, P1) # Scalar function space.
-V2 = functionspace(domain, U2) # Vector function space
-#
+TH = MixedElement([U2, P1, P1])   #  Taylor-Hood style mixed element
+ME = FunctionSpace(mesh, TH)      # Total space for all DOFs
+
 # Define actual functions with the required DOFs
 w = Function(ME)
-u, p, phi = split(w) # displacement u, presssure p, and electric potential phi
+u, p, phi = split(w)                   # displacement u, pressure p, potential  phi
 
-# A copy of functions to store values in the previous step
-w_old  = Function(ME)
-u_old,  p_old, phi_old = split(w_old)   
+# A copy of functions to store values in the previous step for time-stepping
+w_old = Function(ME) 
+u_old, p_old, phi_old = split(w_old)   # old values
 
-# Define test functions   
-u_test, p_test, phi_test = TestFunctions(ME)    
+# Define test functions  
+w_test = TestFunction(ME)   # Test function
+u_test, p_test, phi_test = split(w_test)  # test fields  
 
-# Define trial functions needed for automatic differentiation
-dw = TrialFunction(ME)
+#Define trial functions neede for automatic differentiation
+dw = TrialFunction(ME)  
 
-#------------------------------------------------------------- 
-# Utility subroutines
-#-------------------------------------------------------------
- 
-# Subroutine for a "safer" sqrt() function which avoids a divide by zero 
-# when differentiated. 
-def safe_sqrt(x):
-    return sqrt(x + 1.0e-16)
-
-
-#------------------------------------------------------------- 
-# Subroutines for kinematics
-#-------------------------------------------------------------
-
+'''''''''''''''''''''
+SUBROUTINES
+'''''''''''''''''''''
 # Deformation gradient 
 def F_calc(u):
-    Id = Identity(3) 
-    F = Id + grad(u) 
+    Id = Identity(3)  
+    F  = Id + grad(u)  
     return F
-
-
-#------------------------------------------------------------- 
-# Subroutines for calculating the electric field and displacement
-#-------------------------------------------------------------
-
-# Referential electric displacement 
-def Dmat_calc(u, phi):
-    F = F_calc(u)
-    J = det(F)
-    C = F.T*F
-    e_R  = - grad(phi) # referential electric field
-    Dmat = vareps * J* inv(C)*e_R
-    return Dmat
-
-#------------------------------------------------------------- 
-# Subroutines for calculating the stress
-#-------------------------------------------------------------
 
 # Generalized shear modulus for Gent model
 def Geq_Gent_calc(u):
     F = F_calc(u)
-    J = det(F)
     C = F.T*F
     Cdis = J**(-2/3)*C
     I1 = tr(Cdis)
-    z = I1-3
+    z = I1-3 
     z   = conditional( gt(z, I_m), 0.95*I_m, z ) # Keep from blowing up
     Geq_Gent  = Geq_0 * (I_m/(I_m - z))
     return Geq_Gent
@@ -266,13 +225,26 @@ def T_mat_calc(u, p, phi):
     Tmat   = J * T * inv(F.T)
     return Tmat
 
-# Kinematical quantities
-F  = F_calc(u)
-J  = det(F)
+
+# Referential electric displacement 
+def Dmat_calc(u, phi):
+    F = F_calc(u)
+    J = det(F)
+    C = F.T*F
+    e_R  = - grad(phi) # referential electric field
+    Dmat = vareps * J* inv(C)*e_R
+    return Dmat
+
+'''''''''''''''''''''''''''''
+Kinematics and Constitutive relations
+'''''''''''''''''''''''''''''
+
+# Some kinematical quantities
+F =  F_calc(u) 
+J = det(F)
 C =  F.T*F
 Fdis = J**(-1/3)*F
 Cdis = J**(-2/3)*C
-I1 = tr(Cdis)
 
 # Mechanical Cauchy stress
 T_mech = T_mech_calc(u, p)
@@ -281,264 +253,225 @@ T_mech = T_mech_calc(u, p)
 T_maxw =T_maxw_calc(u, phi) 
 
 # Piola stress
-Piola = T_mat_calc(u, p, phi)  
+Tmat = T_mat_calc(u, p, phi)  
 
 # Referential electric displacement
 Dmat = Dmat_calc(u, phi)
 
+'''''''''''''''''''''''
+WEAK FORMS
+'''''''''''''''''''''''
+# Residuals:
+# Res_0: Balance of forces (test fxn: u)
+# Res_1: Pressure variable (test fxn: p)
+# Res_2: Gauss's law   (test fxn: phi)
+
 # The weak form for the equilibrium equation
-#
-Res_1  =  inner( Piola, grad(u_test))*dx
-              
-# The auxiliary equation for the pressure
-#
-Res_2 = inner((p/Kbulk + ln(J)/J) , p_test)*dx
+Res_0 =  inner(Tmat, grad(u_test) )*dx
+
+# The weak form for the pressure  
+Res_1 =  dot((p/Kbulk + ln(J)/J) , p_test)*dx
 
 #  The weak form for Gauss's equation
-Res_3 = inner(Dmat, grad(phi_test))*dx 
+Res_2 = inner(Dmat, grad(phi_test))*dx 
 
-# The total residual
-Res = Res_1 + Res_2 + Res_3
+# Total weak form
+Res  =  Res_0 + Res_1 + Res_2
 
 # Automatic differentiation tangent:
 a = derivative(Res, w, dw)
-
-# results file name
-results_name = "3D_pullin_Im175"
+   
+'''''''''''''''''''''
+ SET UP OUTPUT FILES
+'''''''''''''''''''''
+# Output file setup
+file_results = XDMFFile("results/3D_pullin_Im175.xdmf")
+file_results.parameters["flush_output"] = True
+file_results.parameters["functions_share_mesh"] = True
 
 # Function space for projection of results
-P1 = element("Lagrange", domain.basix_cell(), 1)
-VV1 = fem.functionspace(domain, P1) # linear scalar function space
-#
-U1 = element("Lagrange", domain.basix_cell(), 1, shape=(3,)) 
-VV2 = fem.functionspace(domain, U1) # linear Vector function space
-#
-T1 = element("Lagrange", domain.basix_cell(), 1, shape=(3,3)) 
-VV3 = fem.functionspace(domain, T1) # linear tensor function space
-
-# For visualization purposes, we need to re-project the stress tensor onto a linear function space before 
-# we write it (and its components and the von Mises stress, etc) to the VTX file. 
-#
-# This is because the stress is a complicated "mixed" function of the (quadratic Lagrangian) displacements
-# and the (quadrature representation) plastic strain tensor and scalar equivalent plastic strain. 
-#
-# First, define a function for setting up this kind of projection problem for visualization purposes:
-def setup_projection(u, V):
-
-    trial = ufl.TrialFunction(V)
-    test  = ufl.TestFunction(V)   
-
-    a = ufl.inner(trial, test)*dx
-    L = ufl.inner(u, test)*dx
-
-    projection_problem = dolfinx.fem.petsc.LinearProblem(a, L, [], \
-        petsc_options={"ksp_type": "cg", "ksp_rtol": 1e-16, "ksp_atol": 1e-16, "ksp_max_it": 1000})
-    
-    return projection_problem
-
-# Create a linear problem for projecting the stress tensor onto the linear tensor function space VV3.
-#
-tensor_projection_problem = setup_projection(Piola, VV3)
-Piola_temp = tensor_projection_problem.solve()
-
-# primary fields to write to output file
-u_vis      = Function(VV2, name="disp")
-p_vis      = Function(VV1, name="p")
-phi_vis    = Function(VV1, name="phi")
-
-# Mises stress
-T     = Piola_temp*F.T/J
-T0    = T - (1/3)*tr(T)*Identity(3)
-Mises = sqrt((3/2)*inner(T0, T0))
-Mises_vis= Function(VV1,name="Mises")
-Mises_expr = Expression(Mises,VV1.element.interpolation_points())
-
-# Cauchy stress components
-T11 = Function(VV1)
-T11.name = "T11"
-T11_expr = Expression(T[0,0],VV1.element.interpolation_points())
-
-T22 = Function(VV1)
-T22.name = "T22"
-T22_expr = Expression(T[1,1],VV1.element.interpolation_points())
-
-T33 = Function(VV1)
-T33.name = "T33"
-T33_expr = Expression(T[2,2],VV1.element.interpolation_points())
-
-# Stretch measure
-I1_vis      = Function(VV1)
-I1_vis.name = "I1"
-I1_expr     = Expression(I1, VV1.element.interpolation_points())
-
-# Volumetric deformation
-J_vis      = Function(VV1)
-J_vis.name = "J"
-J_expr     = Expression(J, VV1.element.interpolation_points())
-
-# set up the output VTX files.
-file_results = VTXWriter(
-    MPI.COMM_WORLD,
-    "results/" + results_name + ".bp",
-    [  # put the functions here you wish to write to output
-        u_vis, p_vis, phi_vis, # DOF outputs
-        Mises_vis, T11, T22, T33, # stress outputs
-        I1_vis, J_vis, # Kinematical outputs
-    ],
-    engine="BP4",
-)
+W2 = FunctionSpace(mesh, U2) # Vector space for visulization  
+W = FunctionSpace(mesh,P1)   # Scalar space for visulization 
 
 def writeResults(t):
     
-    # Update the output fields before writing to VTX.
-    #
-    u_vis.interpolate(w.sub(0))
-    p_vis.interpolate(w.sub(1))
-    phi_vis.interpolate(w.sub(2))
-    #
-    # re-project to smooth visualization of quadrature functions
-    # before interpolating.
-    Piola_temp = tensor_projection_problem.solve()
-    Mises_vis.interpolate(Mises_expr)
-    T11.interpolate(T11_expr)
-    T22.interpolate(T22_expr)
-    T33.interpolate(T33_expr)
-    #
-    I1_vis.interpolate(I1_expr)
-    J_vis.interpolate(J_expr)
-       
-    # Finally, write output fields to VTX.
-    #
-    file_results.write(t) 
+       # Variable projecting and renaming
+        u_Vis = project(u, W2)
+        u_Vis.rename("disp"," ")
+        
+        # Visualize the pressure
+        p_Vis = project(p, W)
+        p_Vis.rename("p"," ")
+        
+        # Visualize  normalized chemical potential
+        phi_Vis = project(phi,W)
+        phi_Vis.rename("phi, kV"," ")   
+        
+        
+        # Visualize J
+        J_Vis = project(J, W)
+        J_Vis.rename("J"," ")    
+    
+        
+        # Visualize the Mises stress  
+        T    = Tmat*F.T/J
+        T0   = T - (1/3)*tr(T)*Identity(3)
+        #
+        Mises = sqrt((3/2)*inner(T0, T0))
+        Mises_Vis = project(Mises,W)
+        Mises_Vis.rename("Mises"," ")    
+        
 
-# # infrastructure for evaluating functions at a certain point efficiently
-pointForEval = np.array([length, length, length])
+        T11_Mech_Vis = project(T_mech[0,0],W)
+        T11_Mech_Vis.rename("T11_Mech, kPa","")
+        T22_Mech_Vis = project(T_mech[1,1],W)
+        T22_Mech_Vis.rename("T22_Mech, kPa","")  
+        T33_Mech_Vis = project(T_mech[2,2],W)
+        T33_Mech_Vis.rename("T33_Mech, kPa","")  
+        
+        T11_Maxw_Vis = project(T_maxw[0,0],W)
+        T11_Maxw_Vis.rename("T11_Maxw, kPa","")
+        T22_Maxw_Vis = project(T_maxw[1,1],W)
+        T22_Maxw_Vis.rename("T22_Maxw, kPa","")  
+        T33_Maxw_Vis = project(T_maxw[2,2],W)
+        T33_Maxw_Vis.rename("T33Maxw, kPa","") 
+        
+        T11_Vis = project(T[0,0],W)
+        T11_Vis.rename("T11, kPa","")
+        T22_Vis = project(T[1,1],W)
+        T22_Vis.rename("T22, kPa","")   
+        T33_Vis = project(T[2,2],W)
+        T33_Vis.rename("T33, kPa","")     
+ 
+       # Write field quantities of interest
+        file_results.write(u_Vis, t)
+        file_results.write(p_Vis, t)
+        file_results.write(phi_Vis, t)
+        file_results.write(J_Vis, t)  
+        file_results.write(Mises_Vis, t)
+        file_results.write(T11_Mech_Vis, t)  
+        file_results.write(T22_Mech_Vis, t)  
+        file_results.write(T33_Mech_Vis, t)          
+        file_results.write(T11_Maxw_Vis, t)  
+        file_results.write(T22_Maxw_Vis, t)   
+        file_results.write(T33_Maxw_Vis, t)          
+        file_results.write(T11_Vis, t)  
+        file_results.write(T22_Vis, t)   
+        file_results.write(T33_Vis, t)                 
+        
+# Write initial state to XDMF file
+writeResults(t=0.0)       
 
-bb_tree = dolfinx.geometry.bb_tree(domain,domain.topology.dim)
-cell_candidates = dolfinx.geometry.compute_collisions_points(bb_tree, pointForEval)
-colliding_cells = dolfinx.geometry.compute_colliding_cells(domain, cell_candidates, pointForEval).array
 
-# Constant for applied electric potential
-phi_cons = Constant(domain,PETSc.ScalarType(phiRamp(0)))
-
-#boundaries = [(1, xBot),(2,xTop),(3,yBot),(4,yTop),(5,zBot),(6,zTop)]
-
-# Find the specific DOFs which will be constrained.
-xBot_u1_dofs = fem.locate_dofs_topological(ME.sub(0).sub(0), facet_tags.dim, facet_tags.find(1))
-yBot_u2_dofs = fem.locate_dofs_topological(ME.sub(0).sub(1), facet_tags.dim, facet_tags.find(3))
-zBot_u3_dofs = fem.locate_dofs_topological(ME.sub(0).sub(2), facet_tags.dim, facet_tags.find(5))
-yTop_phi_dofs = fem.locate_dofs_topological(ME.sub(2), facet_tags.dim, facet_tags.find(4))
-yBot_phi_dofs = fem.locate_dofs_topological(ME.sub(2), facet_tags.dim, facet_tags.find(3))
-
-
-# building Dirichlet BCs
-bcs_1 = dirichletbc(0.0, xBot_u1_dofs, ME.sub(0).sub(0))  # u1 fix - xBot
-bcs_2 = dirichletbc(0.0, yBot_u2_dofs, ME.sub(0).sub(1))  # u2 fix - yBot
-bcs_3 = dirichletbc(0.0, zBot_u3_dofs, ME.sub(0).sub(2))  # u3 fix - zBot
-#
-bcs_4 = dirichletbc(phi_cons, yTop_phi_dofs, ME.sub(2))  # phi ramp - yTop
-bcs_5 = dirichletbc(0.0, yBot_phi_dofs, ME.sub(2))       # phi ground - yBot
-
-bcs = [bcs_1, bcs_2, bcs_3, bcs_4, bcs_5]
-
-# Set up nonlinear problem
-problem = NonlinearProblem(Res, w, bcs, a)
-
-# the global newton solver and params
-solver = NewtonSolver(MPI.COMM_WORLD, problem)
-solver.convergence_criterion = "incremental"
-solver.rtol = 1e-8
-solver.atol = 1e-8
-solver.max_it = 50
-solver.report = True
-
-#  The Krylov solver parameters.
-ksp = solver.krylov_solver
-opts = PETSc.Options()
-option_prefix = ksp.getOptionsPrefix()
-opts[f"{option_prefix}ksp_type"] = "preonly" # "preonly" works equally well
-opts[f"{option_prefix}pc_type"] = "lu" # do not use 'gamg' pre-conditioner
-opts[f"{option_prefix}pc_factor_mat_solver_type"] = "mumps"
-opts[f"{option_prefix}ksp_max_it"] = 30
-ksp.setFromOptions()
-
-# Give the step a descriptive name
-step = "Actuate"
-
-# Variables for storing time history
-totSteps = 1000000
-timeHist0 = np.zeros(shape=[totSteps])
-timeHist1 = np.zeros(shape=[totSteps]) 
-
-# Iinitialize a counter for reporting data
-ii=0
-
-# Write initial state to file
-writeResults(t=0.0)    
-
-# print a message for simulation startup
 print("------------------------------------")
-print("Simulation Start")
+print("Start Simulation")
 print("------------------------------------")
 # Store start time 
 startTime = datetime.now()
 
+"""""""""""""""""
+     STEP
+"""""""""""""""""
+# Give the step a descriptive name
+step = "Actuate"
+
+'''''''''''''''''''''''
+Boundary conditions
+'''''''''''''''''''''''
+
+
+
+bcs_1 = DirichletBC(ME.sub(0).sub(0), 0, facets, 1)    # fix u1 degree  on face1 
+bcs_2 = DirichletBC(ME.sub(0).sub(1), 0, facets, 2)    # fix u2 dgree   on face2
+bcs_3 = DirichletBC(ME.sub(0).sub(2), 0, facets, 3)    # fix u3 degree  on face3
+#
+bcs_4 = DirichletBC(ME.sub(2), 0, facets, 3)           #  phi ground bottom, face 3
+bcs_5 = DirichletBC(ME.sub(2), phiRamp, facets, 6)     #  phi ramp top, face 6 
+#
+
+# BC sets for different steps of simulation
+bcs = [bcs_1, bcs_2, bcs_3, bcs_4, bcs_5]
+
+
+# Set up the non-linear problem 
+electrostaticProblem = NonlinearVariationalProblem(Res, w, bcs, J=a)
+ 
+# Set up the non-linear solver
+solver  = NonlinearVariationalSolver(electrostaticProblem)
+
+#Solver parameters
+prm = solver.parameters
+prm['nonlinear_solver'] = 'newton'
+prm['newton_solver']['linear_solver'] = "mumps" 
+prm['newton_solver']['absolute_tolerance']   = 1.e-8
+prm['newton_solver']['relative_tolerance']   = 1.e-7
+prm['newton_solver']['maximum_iterations']   = 25
+prm['newton_solver']['relaxation_parameter'] = 1.0
+#prm['newton_solver']['error_on_nonconvergence'] = False
+
+# Initalize output array for tip displacement
+totSteps = numSteps+1
+timeHist0 = np.zeros(shape=[totSteps])
+timeHist1 = np.zeros(shape=[totSteps]) 
+#Iinitialize a counter for reporting data
+ii=0
+
 # Time-stepping solution procedure loop
 while (round(t + dt, 9) <= Ttot):
-  
-    # increment time
-    t += dt 
     
+    # increment time
+    t += float(dt)
     # increment counter
     ii += 1
     
     # update time variables in time-dependent BCs 
-    phi_cons.value = phiRamp(t)
-    
+    phiRamp.t = t
+
+    phi_current = float(phiRamp.phi_tot * phiRamp.t / phiRamp.Ttot)
+
     # Solve the problem
     try:
-      (iter, converged) = solver.solve(w)
+        (iter, converged) = solver.solve()
     except: # Break the loop if solver fails
-      break
-        
-    # Collect results from MPI ghost processes
-    w.x.scatter_forward()
-
-    # Print progress of calculation         
-    if ii%1 == 0:
-      now = datetime.now()
-      current_time = now.strftime("%H:%M:%S")
-      print("Step: {} | Increment: {} | Iterations: {}".format(step, ii, iter))
-      print("dt: {} | Simulation Time: {} s | Percent of total time: {}%".format(round(dt,4), round(t,4), round(100*t/Ttot,4)))
-      print() 
-      
-    # Write output to file
+        print("Solution didn't converge at phi = {:.6f} kV (t = {:.4f} s, step {})"
+          .format(phi_current, t, ii))
+        break
+    
+    # Write output to *.xdmf file
     writeResults(t)
-       
-    # Store time history variables at this time
-    timeHist0[ii] = w.sub(0).sub(1).eval([length, length, length],colliding_cells[0])[0] # time history of displacement at a point
-    timeHist1[ii] = w.sub(2).eval([length, length, length],colliding_cells[0])[0] # time history of voltage phi at a point
-
+    
     # Update DOFs for next step
-    w_old.x.array[:] = w.x.array
-    
+    w_old.vector()[:] = w.vector()
 
     
-# close the output file.
-file_results.close()
-         
-# End analysis
-print("-----------------------------------------")
-print("End computation")                 
-# Report elapsed real time for the analysis
+    # Store  displacement and potential at a particular point  at this time
+    timeHist0[ii] = w.sub(0).sub(2)(length, length, length) # time history of displacement
+    timeHist1[ii] = w.sub(2)(length, length, length)        # time history of voltage phi
+
+    # print progress of calculation 
+    if ii%1 == 0:      
+        now = datetime.now()
+        current_time = now.strftime("%H:%M:%S")
+        print("Step: {} |   Increment: {} | Iterations: {}".format(step, ii, iter))
+        print("Simulation Time: {} s | dt: {} s".format(round(t,2), round(dt, 3)))
+        print()   
+            
+
+
+# Report elapsed real time for whole analysis
 endTime = datetime.now()
 elapseTime = endTime - startTime
-print("------------------------------------------")
+print("-------------------------------------------")
 print("Elapsed real time:  {}".format(elapseTime))
-print("------------------------------------------")
+print("-------------------------------------------")
 
-# set plot font to size 18
-font = {'size'   : 18}
+
+'''''''''''''''''''''
+    VISUALIZATION
+'''''''''''''''''''''
+
+# set plot font to size 14
+font = {'size'   : 14}
 plt.rc('font', **font)
 
 # Get array of default plot colors
@@ -554,31 +487,26 @@ normVolts = normVolts[0:ii]
 stretch = timeHist0/length + 1.0
 stretch = stretch[0:ii]
 #
-plt.plot(normVolts, stretch, c=colors[0], linewidth=2.0)
+plt.plot(normVolts, stretch, c=colors[0], linewidth=1.0, marker='.')
+#plt.scatter(normVolts[ii-1], stretch[ii-1], c='k', marker='x', s=100)
+#plt.scatter(normVolts[ii-1], stretch[ii-1], c='k',  s=100)
 plt.grid(linestyle="--", linewidth=0.5, color='b')
 ax = plt.gca()
 #
 ax.set_ylabel(r'$\lambda$')
-ax.set_ylim([0.25,1.01])
-# ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
+ax.set_ylim([0.0,1.1])
+ax.set_yticks([0.2, 0.4, 0.6, 0.8, 1.0])
 #
-# ax.set_xlabel(r'$(\phi/\ell_0)/\sqrt{G_0/\varepsilon} $')
-ax.set_xlabel(r'Normalized potential, $\frac{\phi/\ell_0}{\sqrt{G_0/\varepsilon}}$',size=18)
-ax.set_xlim([0.0,1.0])
-# ax.set_xticks([0.0, 0.25, 0.5, 0.75, 1.0])
+ax.set_xlabel(r'$(\phi/\ell_0)/\sqrt{G_0/\varepsilon} $')
+ax.set_xlim([0.2,1.0])
+ax.set_xticks([0.0, 0.25, 0.5, 0.75, 1.0])
 #
-# from matplotlib.ticker import AutoMinorLocator,FormatStrFormatter
-# ax.xaxis.set_minor_locator(AutoMinorLocator())
-# ax.yaxis.set_minor_locator(AutoMinorLocator())
-# plt.show()
-
-
-plt.text(normVolts[ii-1], stretch[ii-1], r'X', color='k',\
-           horizontalalignment='center',verticalalignment='center')
-
-
+from matplotlib.ticker import AutoMinorLocator,FormatStrFormatter
+ax.xaxis.set_minor_locator(AutoMinorLocator())
+ax.yaxis.set_minor_locator(AutoMinorLocator())
+plt.show()
 
 fig = plt.gcf()
-fig.set_size_inches(7,5)
+fig.set_size_inches(6,4)
 plt.tight_layout()
-plt.savefig("results/cube_pullin_Im175.png", dpi=600)   
+plt.savefig("results/cube_pullin_Im175.png", dpi=600)

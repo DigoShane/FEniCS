@@ -33,7 +33,7 @@ gmsh.model.occ.cut([(2, 1)], [(2, 2)])
 gmsh.model.occ.synchronize()
 
 # Mesh size control
-lc = 0.025
+lc = 0.01
 
 gmsh.option.setNumber("Mesh.CharacteristicLengthMax", lc)
 gmsh.option.setNumber("Mesh.CharacteristicLengthMin", lc / 4)
@@ -214,7 +214,7 @@ prm = solver_u.parameters
 
 prm["newton_solver"]["absolute_tolerance"] = 1e-5
 prm["newton_solver"]["relative_tolerance"] = 1e-4
-prm["newton_solver"]["maximum_iterations"] = 200
+prm["newton_solver"]["maximum_iterations"] = 300
 prm["newton_solver"]["linear_solver"]      = "mumps"
 prm["newton_solver"]["report"]             = True
 prm["newton_solver"]["relaxation_parameter"] = 0.5
@@ -275,7 +275,7 @@ for f in [xdmf_u, xdmf_d]:
 
 tol, Nitermax = 1e-3, 500
 
-loading = np.concatenate((np.linspace(0, 70e-3, 6), np.linspace(70e-3, 225e-3, 80)[1:]))
+loading = np.concatenate((np.linspace(0, 70e-3, 26), np.linspace(70e-3, 225e-3, 80)[1:]))
 
 N_steps = loading.shape[0]
 
