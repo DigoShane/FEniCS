@@ -741,6 +741,20 @@ prm['newton_solver']['maximum_iterations']   = 125
 prm['newton_solver']['relaxation_parameter'] = 0.5
 prm['newton_solver']['error_on_nonconvergence'] = True
 
+postprocess_only = input("Only postprocess restart_solution.h5 without solving? (y/n): ")
+
+if postprocess_only == "y":
+    HDF5File(mesh.mpi_comm(), "restart_solution.h5", "r").read(w, "/w")
+
+    print("Loaded restart solution from restart_solution.h5")
+    print("Skipping nonlinear solve. Running postprocessing only.")
+
+    field_dict = writeResults(phi_app)
+    save_center_node_field_values_separate_files(phi_app)
+    plot_bottom_boundary_er_tangential(phi_app)
+
+    sys.exit()
+
 use_restart = input("Use previous saved solution as initial guess? (y/n): ")
 
 if use_restart=='y':
